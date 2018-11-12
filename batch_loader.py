@@ -241,7 +241,7 @@ def repo_import(repo_metadata_filepath, title, first_file, other_files, reposito
     if collection:
         command += ['--collection=%s' % collection]
     if other_files:
-        command.extend(['--otherfiles=%s' % ','.join(other_files)])
+        command.extend(['--otherfiles=%s' % '{|,|}'.join(other_files)]) # our files have commas
     if repository_id:
         log.info('%s is an update.', title)
         command.extend(['--update-item-id=%s' % repository_id])
@@ -258,10 +258,10 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Loads into GW Scholarspace from CSV')
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('csv', help='filepath of CSV file')
-    parser.add_argument('--url', action='store_true')
+    parser.add_argument('--url', action='store_true',help='if this flag is set, it will look for fulltext_url instead of files')
     parser.add_argument('--worktype',type=str,help='The Hyrax work type of the works [default: Etd]',default="Etd")
     parser.add_argument('--collection',type=str,help='the id of the collection to add this work to in hyrax',default=None)
-    parser.add_argument('--tiff',action='store_true')
+    parser.add_argument('--tiff',action='store_true',help='if flag is used will generate a tiff from primary file and use that as primary file')
     args = parser.parse_args()
     run_ingest_process_csv(args.csv,config.ingest_command, config.ingest_path,
      config.ingest_depositor,args.worktype,url = args.url,debug = args.debug,collection = args.collection,tiff = args.tiff)
