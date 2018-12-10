@@ -1,0 +1,64 @@
+[    {
+        "creator": [
+            "leengat2",
+            "Yurai2, Chyenten"
+        ],
+        "title": [
+            "GPS#8"
+        ],
+        "license": [],
+        "resource_type": [
+            "filefromurl",
+            "journal"
+        ],
+        "fulltext_url":"http://eprojects.wpi.edu/sites/default/files/gps-posters/2018/01/08/Paul%20Bonarrigo%20An%20App%20to%20Address%20Veteran%20Mental%20Health.pdf"
+    },
+    {
+        "identifier": [
+          "E-project-122110-145243"
+        ],
+        "publisher": [
+          "WPI"
+        ],
+        "title": [
+          "Honduras Mission: Design of Carpentry Shop and 2nd Floor Dormitory Addition"
+        ],
+        "description": [
+          "This project involved architectural and structural design using Building Information Modeling (BIM) software, structural analysis using spreadsheets and structural analysis software Mastan for two reinforced concrete structures for a non-profit organization in Guaimaca, Honduras.  Project management activities including cost estimating and project scheduling were completed using spreadhseets and the Primavera software package. The two structures to be built are a carpentry shop with a warehouse attached and a second story addition and interior remodeling to a functioning dormitory."
+        ],
+        "resource_type": [
+          "MQP"
+        ],
+        "date_created": [
+          "2010-12-21"
+        ],
+        "rights_statement": [
+          "All authors have granted to WPI a nonexclusive royalty-free license to distribute copies of the work, subject to other agreements.  Copyright is held by the author or authors, with all rights reserved, unless otherwise noted."
+        ],
+        "fulltext_url": "http://www.wpi.edu/Pubs/E-project/Available/E-project-122110-145243/unrestricted/MQPHondurasGFS1002.pdf",
+        "creator": [
+          "Shayganfar, Rudy Ellyn"
+        ],
+        "contributor": [
+          "Jayachandran, Paramasivam",
+          "Salazar, Guillermo F."
+        ],
+        "advisor": [
+          "Jayachandran, Paramasivam",
+          "Salazar, Guillermo F."
+        ],
+        "resources": [
+          "http://www.wpi.edu/Pubs/E-project/Available/E-project-122110-145243/unrestricted/Carp_PM.xer",
+          "http://www.wpi.edu/Pubs/E-project/Available/E-project-122110-145243/unrestricted/Carp_Struct_Final_Phased.rvt",
+          "http://www.wpi.edu/Pubs/E-project/Available/E-project-122110-145243/unrestricted/Carpentry_StructuralAnalysis.xlsx",
+          "http://www.wpi.edu/Pubs/E-project/Available/E-project-122110-145243/unrestricted/Cost_Estimate_Carp.xls",
+          "http://www.wpi.edu/Pubs/E-project/Available/E-project-122110-145243/unrestricted/Cost_Estimate_Dorm.xls",
+          "http://www.wpi.edu/Pubs/E-project/Available/E-project-122110-145243/unrestricted/Dorm_4_Total_Cost.rvt",
+          "http://www.wpi.edu/Pubs/E-project/Available/E-project-122110-145243/unrestricted/Dorm_PM.xer",
+          "http://www.wpi.edu/Pubs/E-project/Available/E-project-122110-145243/unrestricted/Dormitory_StructuralAnalysis.xlsx"
+        ],
+        "license": [
+          "http://creativecommons.org/licenses/by/3.0/us/"
+        ]
+    }
+]

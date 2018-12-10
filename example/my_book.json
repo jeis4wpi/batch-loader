@@ -1,0 +1,19 @@
+[
+    {
+        "license": [
+            "http://creativecommons.org/licenses/by/3.0/us/"
+        ],
+        "creator": [
+            "Littman, Justin"
+        ],
+        "title": [
+            "My Book"
+        ],
+        "resource_type": [
+            "book",
+            "journal"
+        ],
+        "files": "my_book",
+        "first_file": "my_book/intro.txt"
+    }
+]

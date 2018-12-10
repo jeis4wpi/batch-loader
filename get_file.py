@@ -2,13 +2,14 @@ import re
 import os
 import time
 import subprocess
-from lxml import etree
-import xml.etree.ElementTree as xtree
-import requests
-import validators
 import getpass
 from urllib.parse import unquote
 import tempfile
+import xml.etree.ElementTree as xtree
+from lxml import etree
+import requests
+import validators
+
 #written for WPI ingesting from URL
 class UrlException(ValueError):
 	pass
@@ -68,6 +69,13 @@ def grant_access(path,rights = '775'):
 	subprocess.run(['sudo','chmod',rights,path], stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
 	return subprocess.run(['sudo','chown',this_user,path], stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
 
+def mv(path,new_path,args = None):
+	if args is None:
+		args = []
+	status = subprocess.run(['mv',path,new_path]+args, stdout=subprocess.PIPE)
+	if status:
+		return
+	return subprocess.run(['sudo','mv',path,new_path]+args, stdout=subprocess.PIPE)
 
 def download_file(url,dwnld_dir = None):
 	""" if the given url is valid and we have access to the file attached to it. this funciton
