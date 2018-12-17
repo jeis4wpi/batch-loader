@@ -10,14 +10,16 @@ import subprocess
 import get_file
 log = logging.getLogger(__name__)
 
-required_field_names = (
-    'files',
-    'fulltext_url',
+required_field_names = ( # for csv, things ending in 1 are multi-valued, everything else is scalar
+    'files', #required only for ingest of files on this machine
+    'fulltext_url', # required for pulling the files from urls
     'resource_type1',
     'title1',
     'creator1',
     'license1'
 )
+
+
 
 def run_ingest_process_csv(csv_path,ingest_command,ingest_path,ingest_depositor,worktype, url = None,debug = None,collection = None, tiff = None):
     logging.basicConfig(
@@ -32,52 +34,173 @@ def run_ingest_process_csv(csv_path,ingest_command,ingest_path,ingest_depositor,
     base_filepath = os.path.dirname(os.path.abspath(csv_path))
     raw_download_dir = tempfile.mkdtemp()
     for row in rows:
-        if url: #boolean if we are using urls to get file or not
+        if 'first_file' in row:
+            full_file_path = row['first_file']
+        if 'files' in row:
+            files_dir = row['files']
+        if url: #boolean representing if we are using urls to get relevant file(s)
             print(row['fulltext_url'])
-            file_full_path  = get_file.download_file(row['fulltext_url'],dwnld_dir = raw_download_dir)
-            row['files'] = file_full_path
-            row['first_file'] = file_full_path
-        if tiff: # if we want to generate a tiff, and have it be the primary file
-            OGFN = os.path.basename(file_full_path)# OGFN => OriGinal File Name
-            generated_tiff = get_file.create_tiff_imagemagick(file_full_path)
-            tiff_FN = os.path.basename(generated_tiff)
-            files_dir = get_file.create_dir_for([file_full_path,generated_tiff])
-            file_full_path = os.path.join(files_dir,tiff_FN)
+            files_dir, full_file_path = rip_files_from_url(row,raw_download_dir)
+            #full_file_path  = get_file.download_file(row['fulltext_url'],dwnld_dir = raw_download_dir)
             row['files'] = files_dir
-            row['first_file'] = file_full_path
-        metadata = create_repository_metadata(row, singular_field_names, repeating_field_names)
-        # at this point that metadata is a dictionary
+            row['first_file'] = full_file_path
+        if tiff: # if we want to generate a tiff, and have it be the primary file
+            if 'files' not in row:
+                raise ValueError("no files "+str(row))
+            if isinstance(row['files'], list):
+                files_dir,full_file_path =  make_tiff_from_file(full_file_path,row['files'],True)
+            elif isinstance(row['files'], str) and os.path.isdir(row['files']):
+                files_dir, full_file_path = make_tiff_from_file(full_file_path)
+            else:
+                raise ValueError("no files, cause files is not string or path to dir "+str(row))
+            row['files'] = files_dir
+            row['first_file'] = full_file_path
+        # from pudb import set_trace;set_trace()
+        metadata = create_repository_metadata(row, singular_field_names, repeating_field_names)#todo
+        write_metadata_and_ingest(metadata,row,raw_download_dir,base_filepath,ingest_command,ingest_path,ingest_depositor,worktype, url,debug,collection,tiff)
+        # at this point the metadata is a dictionary
         # of all the metadata where reapeating values are key : [value,value]
         # and scalars are key : value
         # the keys are exactly as they will be mapped in hyrax ie "creator" : ["Yoshikami, Katie-Lynn"]
         # instead of "creator1" or any numbered item.
-        metadata_temp_path = tempfile.mkdtemp()
-        metadata_filepath = os.path.join(metadata_temp_path, 'metadata.json')
+    if not debug:
+        shutil.rmtree(raw_download_dir, ignore_errors=True)
 
+def do_ingest_with_json(json_file,ingest_command,ingest_path,ingest_depositor,worktype,
+    url = None,debug = None,collection = None, tiff = None):
+    """ a function that ingests works given a json file containing the metadata for the works 
+    """
+    with open(json_file,'r') as jf:
+        rows = json.load(jf)
+        ### required for only certain types of ingest ###
+        raw_download_dir = tempfile.mkdtemp() # for url downloads
+        base_filepath = os.path.dirname(os.path.abspath(json_file)) #this is where files are if we dont need to download them
+        ################################################
+    for row in rows:
+        validate_metadata_json(row,url) # ensures that the required stuff is there and that its the right type
+        if not url:
+            files_dir=row['files']
+            full_file_path=row['first_file']
+        if url:
+            files_dir, full_file_path = rip_files_from_url(row,raw_download_dir)
+        if tiff:
+            if not os.path.isdir(files_dir):
+                files_dir,full_file_path = make_tiff_from_file(full_file_path,new_dir=True)
+            else:
+                files_dir,full_file_path = make_tiff_from_file(full_file_path)
+
+
+        ### prepare row for ingest ###
+        row['files'] = files_dir
+        row['first_file'] = full_file_path
+        metadata = {}
+        for key in row:
+            if key != 'files' and key != 'first_file' and key != 'resources' and key != 'fulltext_url':
+                metadata[key] = row[key] 
+
+        ##############################
+
+        write_metadata_and_ingest(metadata,row,raw_download_dir,base_filepath,ingest_command,ingest_path,ingest_depositor,worktype, url,debug,collection,tiff)
+    if not debug:
+        shutil.rmtree(raw_download_dir, ignore_errors=True)
+
+def validate_metadata_json(metadata,use_url):
+    """ 
+    Desc: ensures that the metadata is in the right form by getting list of required scalars and list of required 
+    multi-valued metadata objects and ensure that scalars are not lists and that multivalues are.
+    Args: metadata (dict): all metadat including the files, first_file, fulltext_url type stuff
+    Returns: its a void function
+    """
+    log.debug('Validating field names for json ingest')
+    scalars, lists = analyze_field_names(required_field_names)
+    for value in scalars:
+        assert value in metadata
+        assert not isinstance(metadata[value], list)
+    for value in lists:
+        assert value in metadata
+        assert isinstance(metadata[value], list)
+    if use_url:
+        assert 'fulltext_url' in metadata
+    if not use_url:
+        assert 'files' in metadata
+    return
+
+
+def rip_files_from_url(row,raw_download_dir):
+    """ 
+    Desc: takes in a row of metadata including 'fulltext_url' and optionally 'resources'
+        downloads all files to new directory insdie the raw_download_dir directory returns 
+        path to the dir containing the files, and the first files path
+    Args: row (dict): metadata for the work
+          raw_download_dir (str): path to the place these files should be stored
+    returns: tuple: first element is the path to the directory containing relevant resources:
+                    second element is the path to the primary file for the work
+    """
+    if 'identifier' in row and row['identifier']:
+        if isinstance(row['identifier'],list):
+            ID = row['identifier'][0]
+        else:
+            ID = row['identifier']
+
+        proj_dir = os.path.join(raw_download_dir,ID)
+        get_file.mkdir(proj_dir)
+
+        if not os.path.exists(proj_dir):
+            raise FileNotFoundError('could not create project dir')
+    else:
+        proj_dir = tempfile.mkdtemp(dir=raw_download_dir)
+
+
+    if 'resources' in row and row['resources']:
+        for resource in row['resources']:
+            get_file.download_file(resource,dwnld_dir = proj_dir)
+    full_file_path  = get_file.download_file(row['fulltext_url'],dwnld_dir = proj_dir)
+    return proj_dir, full_file_path
+
+def make_tiff_from_file(full_file_path,files = None,new_dir = False):
+    """ generates a tiff for the file at full_file_path, places it in the same directory.
+        if new_dir flag evaluates as true, then will create a new directory and place both files there 
+    """
+    if files is None:
+        files = []
+    generated_tiff = get_file.create_tiff_imagemagick(full_file_path)
+    tiff_name = os.path.basename(generated_tiff)
+    if new_dir: #prob not actually gonna use this, im confused.
+        new_dir = get_file.create_dir_for([full_file_path,generated_tiff]+files)
+        return new_dir, os.path.join(new_dir,tiff_name)
+    return os.path.dirname(generated_tiff),generated_tiff
+
+def write_metadata_and_ingest(metadata,row,raw_download_dir,base_filepath,ingest_command,ingest_path,ingest_depositor,worktype, url = None,debug = None,collection = None, tiff = None):
+    """ takes the metadata for a work, 
+    """
+    metadata_temp_path = tempfile.mkdtemp()
+    metadata_filepath = os.path.join(metadata_temp_path, 'metadata.json')
+
+    try:
+        with open(metadata_filepath, 'w') as repo_metadata_file:
+            json.dump(metadata, repo_metadata_file, indent=4)
+            log.debug('Writing to {}: {}'.format(metadata_filepath, json.dumps(metadata)))
         try:
-            with open(metadata_filepath, 'w') as repo_metadata_file:
-                json.dump(metadata, repo_metadata_file, indent=4)
-                log.debug('Writing to {}: {}'.format(metadata_filepath, json.dumps(metadata)))
-            try:
-                first_file, other_files = find_files(row['files'], row.get('first_file'), base_filepath)
-                # TODO: Handle passing existing repo id
-                repo_id = repo_import(metadata_filepath, metadata['title'], first_file, other_files, None,
-                                      ingest_command,
-                                      ingest_path,
-                                      ingest_depositor,
-                                      worktype,
-                                      collection)
-                # TODO: Write repo id to output CSV
-            except Exception as e:
-                # TODO: Record exception to output CSV
-                raise e
-        finally:
-            if (not debug) and os.path.exists(metadata_filepath):
-                shutil.rmtree(metadata_temp_path, ignore_errors=True)
-                if os.path.exists(raw_download_dir):
-                    print("ensure to remove {}\nit contians all downloaded files".format(raw_download_dir))
-                    print("however until sidekiq is done they should persist")
-                    #shutil.rmtree(raw_download_dir, ignore_errors=True)
+            first_file, other_files = find_files(row['files'], row.get('first_file'), base_filepath)
+            # TODO: Handle passing existing repo id
+            repo_id = repo_import(metadata_filepath, metadata['title'], first_file, other_files, None,
+                                  ingest_command,
+                                  ingest_path,
+                                  ingest_depositor,
+                                  worktype,
+                                  collection)
+            # TODO: Write repo id to output CSV
+        except Exception as e:
+            # TODO: Record exception to output CSV
+            raise e
+    finally:
+        if (not debug) and os.path.exists(metadata_filepath):
+            shutil.rmtree(metadata_temp_path, ignore_errors=True)
+            if os.path.exists(raw_download_dir):
+                print("ensure to remove {}\nit contians all downloaded files".format(raw_download_dir))
+                print("however until sidekiq is done they should persist")
+                #shutil.rmtree(raw_download_dir, ignore_errors=True)
+
 
 def load_csv(filepath):
     """
@@ -119,12 +242,12 @@ def analyze_field_names(field_names):
     repeating_field_names = set()
     singular_field_names = set()
     for field_name in sorted(field_names):
-        match = re.fullmatch('(.+)(\d+$)', field_name)
+        match = re.fullmatch(r'(.+)(\d+$)', field_name)
         if not match:
             singular_field_names.add(field_name)
         else:
             name_part, number_part = match.groups()
-            while re.match('\d',name_part[-1]):
+            while re.match(r'\d',name_part[-1]):
                 number_part = name_part[-1] + number_part
                 name_part = name_part[:-1]
             if number_part == '1':
@@ -176,12 +299,17 @@ def create_repository_metadata(row, singular_field_names, repeating_field_names)
 def find_files(row_filepath, row_first_filepath, base_filepath):
     """
     Desc: this function will locate all the files and check to ensure the primary file is present
-    Args: row_filepath (str) the path to the file or directory that contains relevent resourcesself.
+    Args: row_filepath (str) the path to the file or directory that contains relevent resources.
+        row_first_file is the main resource to be used
+        base_filepath: is just the dir containing the csv, used for non url ingests
+
     Return: touple
         first element (str): path to the primary file
         second element (set): list of other files relating to the work (does not include primary file)
     """
     filepath = os.path.join(base_filepath, row_filepath)
+    #so os.path.join will just return the second path, if the paths given are entirely disimilar it seems
+    #so /home/me/dir and /tmp/files/file -> /tmp/files/file
     if not os.path.exists(filepath):
         raise FileNotFoundError(filepath)
     files = set()
@@ -194,6 +322,7 @@ def find_files(row_filepath, row_first_filepath, base_filepath):
     # Make sure at least one file
     if not files:
         raise FileNotFoundError('Files in {}'.format(filepath))
+    
     # Either a row_first_filepath or only one file
     if not (row_first_filepath or len(files) == 1):
         raise FileNotFoundError('First file')
@@ -255,13 +384,18 @@ def repo_import(repo_metadata_filepath, title, first_file, other_files, reposito
 if __name__ == '__main__':
     import config
 
-    parser = argparse.ArgumentParser(description='Loads into GW Scholarspace from CSV')
+    parser = argparse.ArgumentParser(description='Loads into digitalWPI from CSV (or Json)')
     parser.add_argument('--debug', action='store_true')
-    parser.add_argument('csv', help='filepath of CSV file')
+    parser.add_argument('file', help='filepath of CSV file or Json')
     parser.add_argument('--url', action='store_true',help='if this flag is set, it will look for fulltext_url instead of files')
     parser.add_argument('--worktype',type=str,help='The Hyrax work type of the works [default: Etd]',default="Etd")
     parser.add_argument('--collection',type=str,help='the id of the collection to add this work to in hyrax',default=None)
     parser.add_argument('--tiff',action='store_true',help='if flag is used will generate a tiff from primary file and use that as primary file')
+    parser.add_argument('--json', action='store_true',help='if the file containing the metadata for the works is a json file, use this flag.')
     args = parser.parse_args()
-    run_ingest_process_csv(args.csv,config.ingest_command, config.ingest_path,
-     config.ingest_depositor,args.worktype,url = args.url,debug = args.debug,collection = args.collection,tiff = args.tiff)
+    if args.json:
+        do_ingest_with_json(args.file,config.ingest_command, config.ingest_path, config.ingest_depositor,
+            args.worktype,url = args.url,debug = args.debug,collection = args.collection,tiff = args.tiff)
+    else:
+        run_ingest_process_csv(args.file,config.ingest_command, config.ingest_path, config.ingest_depositor,
+            args.worktype,url = args.url,debug = args.debug,collection = args.collection,tiff = args.tiff)
