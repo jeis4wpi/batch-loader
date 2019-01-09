@@ -7,9 +7,11 @@ import json
 import os
 import shutil
 import subprocess
+from FormatLog import FormatLogger
+logger = FormatLogger('ingest.log','ingest_failures.log','ingest_status.log',truncate = True)
 import get_file
-log = logging.getLogger(__name__)
 
+log = logging.getLogger(__name__)
 required_field_names = ( # for csv, things ending in 1 are multi-valued, everything else is scalar
     'files', #required only for ingest of files on this machine
     'fulltext_url', # required for pulling the files from urls
@@ -28,42 +30,53 @@ def run_ingest_process_csv(csv_path,ingest_command,ingest_path,ingest_depositor,
     logging.basicConfig(level=logging.DEBUG)
 
     field_names, rows = load_csv(csv_path)
-    log.info('Loading {} object from {}'.format(len(rows), csv_path))
+    logger.info('Loading {} objects from file: {}'.format(len(rows), csv_path))# pylint: disable=E1120
     validate_field_names(field_names,url)
     singular_field_names, repeating_field_names = analyze_field_names(field_names)
     base_filepath = os.path.dirname(os.path.abspath(csv_path))
     raw_download_dir = tempfile.mkdtemp()
+    logger.write('')
     for row in rows:
-        if 'first_file' in row:
-            full_file_path = row['first_file']
-        if 'files' in row:
-            files_dir = row['files']
-        if url: #boolean representing if we are using urls to get relevant file(s)
-            print(row['fulltext_url'])
-            files_dir, full_file_path = rip_files_from_url(row,raw_download_dir)
-            #full_file_path  = get_file.download_file(row['fulltext_url'],dwnld_dir = raw_download_dir)
-            row['files'] = files_dir
-            row['first_file'] = full_file_path
-        if tiff: # if we want to generate a tiff, and have it be the primary file
-            if 'files' not in row:
-                raise ValueError("no files "+str(row))
-            if isinstance(row['files'], list):
-                files_dir,full_file_path =  make_tiff_from_file(full_file_path,row['files'],True)
-            elif isinstance(row['files'], str) and os.path.isdir(row['files']):
-                files_dir, full_file_path = make_tiff_from_file(full_file_path)
-            else:
-                raise ValueError("no files, cause files is not string or path to dir "+str(row))
-            row['files'] = files_dir
-            row['first_file'] = full_file_path
-        # from pudb import set_trace;set_trace()
-        metadata = create_repository_metadata(row, singular_field_names, repeating_field_names)#todo
-        write_metadata_and_ingest(metadata,row,raw_download_dir,base_filepath,ingest_command,ingest_path,ingest_depositor,worktype, url,debug,collection,tiff)
-        # at this point the metadata is a dictionary
-        # of all the metadata where reapeating values are key : [value,value]
-        # and scalars are key : value
-        # the keys are exactly as they will be mapped in hyrax ie "creator" : ["Yoshikami, Katie-Lynn"]
-        # instead of "creator1" or any numbered item.
+        upload_id = row['title1'] if 'identifier1' not in row else row['identifier1']
+        try:
+            logger.status("uploading",upload_id)
+            if 'first_file' in row:
+                full_file_path = row['first_file']
+            if 'files' in row:
+                files_dir = row['files']
+            if url: #boolean representing if we are using urls to get relevant file(s)
+                logger.status("downloading %s"%(row['fulltext_url']))
+                files_dir, full_file_path = rip_files_from_url(row,raw_download_dir)
+                #full_file_path  = get_file.download_file(row['fulltext_url'],dwnld_dir = raw_download_dir)
+                row['files'] = files_dir
+                row['first_file'] = full_file_path
+            if tiff: # if we want to generate a tiff, and have it be the primary file
+                if 'files' not in row:
+                    raise ValueError("no files "+str(row))
+                if isinstance(row['files'], list):
+                    files_dir,full_file_path =  make_tiff_from_file(full_file_path,row['files'],True)
+                elif isinstance(row['files'], str) and os.path.isdir(row['files']):
+                    files_dir, full_file_path = make_tiff_from_file(full_file_path)
+                else:
+                    raise ValueError("no files, cause files is not string or path to dir "+str(row))
+                row['files'] = files_dir
+                row['first_file'] = full_file_path
+            metadata = create_repository_metadata(row, singular_field_names, repeating_field_names)#todo
+            write_metadata_and_ingest(metadata,row,raw_download_dir,base_filepath,ingest_command,ingest_path,ingest_depositor,worktype, url,debug,collection,tiff)
+            # at this point the metadata is a dictionary
+            # of all the metadata where reapeating values are key : [value,value]
+            # and scalars are key : value
+            # the keys are exactly as they will be mapped in hyrax ie "creator" : ["Yoshikami, Katie-Lynn"]
+            # instead of "creator1" or any numbered item.
+            logger.success("Ingested",upload_id)
+        except Exception as e:
+            logger.failure("%s was not ingested - %s:%s" % (upload_id,e.__class__.__name__,e) )
+            if logger.num_success == 0 and logger.num_fail >= 5:
+                print("Warning: Ingest Failed frist 5 in a row!")
+
+        logger.status('End of',upload_id,'\n')# pylint: disable=E1121
     if not debug:
+        logger.status('Removing downloaded files from directory tree')# pylint: disable=E1120
         shutil.rmtree(raw_download_dir, ignore_errors=True)
 
 def do_ingest_with_json(json_file,ingest_command,ingest_path,ingest_depositor,worktype,
@@ -76,32 +89,45 @@ def do_ingest_with_json(json_file,ingest_command,ingest_path,ingest_depositor,wo
         raw_download_dir = tempfile.mkdtemp() # for url downloads
         base_filepath = os.path.dirname(os.path.abspath(json_file)) #this is where files are if we dont need to download them
         ################################################
+    logger.info('Loading {} objects from file: {}'.format(len(rows), json_file))# pylint: disable=E1120
     for row in rows:
-        validate_metadata_json(row,url) # ensures that the required stuff is there and that its the right type
-        if not url:
-            files_dir=row['files']
-            full_file_path=row['first_file']
-        if url:
-            files_dir, full_file_path = rip_files_from_url(row,raw_download_dir)
-        if tiff:
-            if not os.path.isdir(files_dir):
-                files_dir,full_file_path = make_tiff_from_file(full_file_path,new_dir=True)
-            else:
-                files_dir,full_file_path = make_tiff_from_file(full_file_path)
+        try:
+            upload_id = row['title'] if 'identifier' not in row else row['identifier']
+            logger.status("uploading",upload_id)
+
+            validate_metadata_json(row,url) # ensures that the required stuff is there and that its the right type
+            if not url:
+                files_dir=row['files']
+                full_file_path=row['first_file']
+            if url:
+                files_dir, full_file_path = rip_files_from_url(row,raw_download_dir)
+            if tiff:
+                if not os.path.isdir(files_dir):
+                    files_dir,full_file_path = make_tiff_from_file(full_file_path,new_dir=True)
+                else:
+                    files_dir,full_file_path = make_tiff_from_file(full_file_path)
 
 
-        ### prepare row for ingest ###
-        row['files'] = files_dir
-        row['first_file'] = full_file_path
-        metadata = {}
-        for key in row:
-            if key != 'files' and key != 'first_file' and key != 'resources' and key != 'fulltext_url':
-                metadata[key] = row[key] 
+            ### prepare row for ingest ###
+            row['files'] = files_dir
+            row['first_file'] = full_file_path
+            metadata = {}
+            for key in row:
+                if key != 'files' and key != 'first_file' and key != 'resources' and key != 'fulltext_url':
+                    metadata[key] = row[key] 
 
-        ##############################
+            ##############################
 
-        write_metadata_and_ingest(metadata,row,raw_download_dir,base_filepath,ingest_command,ingest_path,ingest_depositor,worktype, url,debug,collection,tiff)
+            write_metadata_and_ingest(metadata,row,raw_download_dir,base_filepath,ingest_command,ingest_path,ingest_depositor,worktype, url,debug,collection,tiff)
+            logger.success("Ingested",upload_id)
+        except Exception as e:
+            logger.failure("%s was not ingested - %s:%s" % (upload_id,e.__class__.__name__,e) )
+            if logger.num_success == 0 and logger.num_fail >= 5:
+                print("Warning: Ingest Failed frist 5 in a row!")
+        logger.status('End of',upload_id,'\n')# pylint: disable=E1121
+
     if not debug:
+        logger.status('Removing downloaded files from directory tree')# pylint: disable=E1120
         shutil.rmtree(raw_download_dir, ignore_errors=True)
 
 def validate_metadata_json(metadata,use_url):
@@ -113,16 +139,20 @@ def validate_metadata_json(metadata,use_url):
     """
     log.debug('Validating field names for json ingest')
     scalars, lists = analyze_field_names(required_field_names)
-    for value in scalars:
-        assert value in metadata
-        assert not isinstance(metadata[value], list)
-    for value in lists:
-        assert value in metadata
-        assert isinstance(metadata[value], list)
-    if use_url:
-        assert 'fulltext_url' in metadata
-    if not use_url:
-        assert 'files' in metadata
+    try:
+        for value in scalars:
+            assert value in metadata
+            assert not isinstance(metadata[value], list)
+        for value in lists:
+            assert value in metadata
+            assert isinstance(metadata[value], list)
+        if use_url:
+            assert 'fulltext_url' in metadata
+        if not use_url:
+            assert 'files' in metadata
+    except Exception as e:
+        logger.critical("%s is a required fields and was not found %s" % (value,e) )# pylint: disable=E1120
+        raise
     return
 
 
@@ -146,6 +176,7 @@ def rip_files_from_url(row,raw_download_dir):
         get_file.mkdir(proj_dir)
 
         if not os.path.exists(proj_dir):
+            logger.error('could not create project dir')
             raise FileNotFoundError('could not create project dir')
     else:
         proj_dir = tempfile.mkdtemp(dir=raw_download_dir)
@@ -171,7 +202,7 @@ def make_tiff_from_file(full_file_path,files = None,new_dir = False):
     return os.path.dirname(generated_tiff),generated_tiff
 
 def write_metadata_and_ingest(metadata,row,raw_download_dir,base_filepath,ingest_command,ingest_path,ingest_depositor,worktype, url = None,debug = None,collection = None, tiff = None):
-    """ takes the metadata for a work, 
+    """ takes the metadata for a work,  ingests the work into hyrax using rake task in config.py
     """
     metadata_temp_path = tempfile.mkdtemp()
     metadata_filepath = os.path.join(metadata_temp_path, 'metadata.json')
@@ -196,10 +227,7 @@ def write_metadata_and_ingest(metadata,row,raw_download_dir,base_filepath,ingest
     finally:
         if (not debug) and os.path.exists(metadata_filepath):
             shutil.rmtree(metadata_temp_path, ignore_errors=True)
-            if os.path.exists(raw_download_dir):
-                print("ensure to remove {}\nit contians all downloaded files".format(raw_download_dir))
-                print("however until sidekiq is done they should persist")
-                #shutil.rmtree(raw_download_dir, ignore_errors=True)
+            #shutil.rmtree(raw_download_dir, ignore_errors=True)
 
 
 def load_csv(filepath):
@@ -224,9 +252,11 @@ def validate_field_names(field_names,use_url):
         if field_name == 'fulltext_url':
             if not use_url:
                 continue #we dont need this if we have paths instead of urls
-        print(field_name)
-        assert field_name in field_names
-
+        try:
+            assert field_name in field_names
+        except Exception as e:
+            logger.critical('field %s not in fieldnames' % (field_name) )# pylint: disable=E1120
+            raise e
 
 def analyze_field_names(field_names):
     """
@@ -260,8 +290,8 @@ def analyze_field_names(field_names):
         singular_field_names.remove('fulltext_url')
     if 'first_file' in singular_field_names:
         singular_field_names.remove('first_file')
-    log.debug('Singular field names: {}'.format(singular_field_names))
-    log.debug('Repeating field names: {}'.format(repeating_field_names))
+    logger.status('Singular field names: {}'.format(singular_field_names))# pylint: disable=E1120
+    logger.status('Repeating field names: {}'.format(repeating_field_names))# pylint: disable=E1120
     return singular_field_names, repeating_field_names
 
 
@@ -360,7 +390,7 @@ def repo_import(repo_metadata_filepath, title, first_file, other_files, reposito
         collectoin (str): the id of the collection in hyrax to add this work to
     Returns: the id of the work in hyrax
     """
-    log.info('Importing %s.', title)
+    logger.info('Importing %s.', title)
     # rake gwss:ingest_etd -- --manifest='path-to-manifest-json-file' --primaryfile='path-to-primary-attachment-file/myfile.pdf' --otherfiles='path-to-all-other-attachments-folder'
     command = ingest_command.split(' ') + ['--',
                                            '--manifest=%s' % repo_metadata_filepath,
@@ -374,10 +404,11 @@ def repo_import(repo_metadata_filepath, title, first_file, other_files, reposito
     if repository_id:
         log.info('%s is an update.', title)
         command.extend(['--update-item-id=%s' % repository_id])
-    log.info("Command is: %s" % ' '.join(command))
+    space = "\r" + ''.join([' ']*200)
+    logger.info(space+"\r\tCommand is: %s\n" % ' '.join(command))# pylint: disable=E1120
     output = subprocess.check_output(command, cwd=ingest_path)
     repository_id = output.decode('utf-8').rstrip('\n')
-    log.info('Repository id for %s is %s', title, repository_id)
+    logger.info('Repository id for',title,'is', repository_id)# pylint: disable=E1120
     return repository_id
 
 
@@ -392,10 +423,16 @@ if __name__ == '__main__':
     parser.add_argument('--collection',type=str,help='the id of the collection to add this work to in hyrax',default=None)
     parser.add_argument('--tiff',action='store_true',help='if flag is used will generate a tiff from primary file and use that as primary file')
     parser.add_argument('--json', action='store_true',help='if the file containing the metadata for the works is a json file, use this flag.')
+    parser.add_argument('--print',type=int,help="how much of the log messages should be printed"+\
+        "\n1: status,errors,warnings,successful ingests,failed ingests, critical failurs, ending summary\n"+\
+        "2: everything but status\n3: just success and failues + summary\n4+: nothing but critical failues",default=1)
     args = parser.parse_args()
+    logger.set_print_level(args.print)
+    logger.status('Start of ingest {}'.format(args))# pylint: disable=E1120
     if args.json:
         do_ingest_with_json(args.file,config.ingest_command, config.ingest_path, config.ingest_depositor,
             args.worktype,url = args.url,debug = args.debug,collection = args.collection,tiff = args.tiff)
     else:
         run_ingest_process_csv(args.file,config.ingest_command, config.ingest_path, config.ingest_depositor,
             args.worktype,url = args.url,debug = args.debug,collection = args.collection,tiff = args.tiff)
+logger.close()

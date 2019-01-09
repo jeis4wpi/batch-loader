@@ -9,6 +9,8 @@ import xml.etree.ElementTree as xtree
 from lxml import etree
 import requests
 import validators
+from FormatLog import FormatLogger
+logger = FormatLogger()
 
 #written for WPI ingesting from URL
 class UrlException(ValueError):
@@ -19,13 +21,14 @@ def create_tiff_imagemagick(file):
 	Args: file (str): path to file which a tiff should be generated for
 	Returns: path to newly created tiff
 	"""
+	logger.info("creating tiff for",file,'...')
 	tiff = file + '.tiff'
 	return_code = subprocess.run(['convert',file,tiff], stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
 	# if return_code != 0:
 	# 	raise Exception("non zero return code for image magick convert, if you are on windows this doesnt work.\ncommand:convert {} {}".format(file,tiff))
 	if os.path.exists(tiff):
-		print('created tiff...')
 		return tiff
+	logger.error('Could not create TIFF')
 	raise Exception("image magick convert failed to produce tiff, if you are on windows this doesnt work use magick convert instead .\ncommand: convert {} {}".format(file,tiff))
 
 def create_dir_for(files):
@@ -62,6 +65,7 @@ def get_file_name_from_url(url):
 		fileName = url[start:end]
 		fileName = unquote(fileName)
 		return fileName
+	logger.error('could not parse file name',url)
 	raise ValueError('unable to figure anything out whatso ever {} '.format(url))
 
 def grant_access(path,rights = '775'):
@@ -91,15 +95,20 @@ def download_file(url,dwnld_dir = None):
 	if not os.path.exists(dwnld_dir):
 		mkdir(dwnld_dir,['-p'])#make directory and make all directories that dont exist on the way
 	# NOTE the stream=True parameter
+	attempts = 0
 	while True:
+		attempts+=1
 		try:
 			if not validators.url(url.replace('[','B').replace(']','Be')):
+				logger.error('Invalid url: {}'.format(url))
 				raise UrlException('Invalid url: {}'.format(url))
 
 			r = requests.get(url, stream =True)
 			break
 		except requests.exceptions.ConnectionError as e:
-			print('i never give up\n',e,'\n',url)
+			logger.error('Can not connect...\n',e,'\n',url)
+			if attempts >=3:
+				raise UrlException('Could not connect to server to download file')
 			time.sleep(2)
 
 	if 200 <= r.status_code <= 299:
@@ -114,6 +123,7 @@ def download_file(url,dwnld_dir = None):
 			print('done downloading %s' % (local_filename),"file size:",file_size)
 
 			if file_size == 0:
+				logger.error("file size is 0, file must not have downlaoded correctly")
 				raise
 			return os.path.abspath(local_filename)
 		except PermissionError as e:
@@ -123,15 +133,16 @@ def download_file(url,dwnld_dir = None):
 				if grant_access(dwnld_dir).returncode == 0:
 					print('success')
 					return download_file(url,dwnld_dir)
-
+			logger.error("could not aquire permission to download to target dir")
 			raise
-	print('failed to download file error:{}, {}'.format(r.status_code,url))
+
 	text = ''
 	if r.text is not None:
 		if len(r.text)>= 100:
 			text = r.text[:100]+'...'
 		else:
 			text = r.text
+	logger.error('failed to download file error:{}, {}'.format(r.status_code,url))
 	raise UrlException('failed to download file.@{} code:{},body:{}'.format(url,r.status_code,text))
 
 def mkdir(path,args = None):
