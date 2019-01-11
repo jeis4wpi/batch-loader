@@ -29,7 +29,7 @@ def create_tiff_imagemagick(file):
 	if os.path.exists(tiff):
 		return tiff
 	logger.error('Could not create TIFF')
-	raise Exception("image magick convert failed to produce tiff, if you are on windows this doesnt work use magick convert instead .\ncommand: convert {} {}".format(file,tiff))
+	raise Exception("image magick convert failed to produce tiff, if you are on windows this doesnt work use magick convert instead.\n\t command: convert {} {}".format(file,tiff))
 
 def create_dir_for(files):
 	"""
@@ -113,14 +113,16 @@ def download_file(url,dwnld_dir = None):
 
 	if 200 <= r.status_code <= 299:
 		try:
-			print('downloading file from {}'.format(url))
+			if logger.prints <2:
+				print('downloading file from {}'.format(url))
 			with open(local_filename, 'wb') as f:
 				for chunk in r.iter_content(chunk_size=1024):
 					if chunk: # filter out keep-alive new chunks
 						f.write(chunk)
 						#f.flush() commented by recommendation from J.F.Sebastian
 			file_size = os.path.getsize(local_filename)
-			print('done downloading %s' % (local_filename),"file size:",file_size)
+			if logger.prints <2:
+				print('done downloading %s' % (local_filename),"file size:",file_size)
 
 			if file_size == 0:
 				logger.error("file size is 0, file must not have downlaoded correctly")

@@ -1,4 +1,5 @@
 import inspect
+import gc
 from datetime import datetime
 from filelock import FileLock
 
@@ -27,25 +28,30 @@ def format_arguments(func):
 		return func(self,first,**kwargs)
 	return format_args_and_call
 
-def get_context_wrapper(func):
+def get_context_wrapper(function_to_call):
 	"""
 	passes in the context in which the wrapped function was called 
 	"""
 	from functools import wraps
-	@wraps(func)
+	@wraps(function_to_call)
 	def context_call(self,*args,**kwargs):
-		# from pudb import set_trace;set_trace()
+		# code from https://stackoverflow.com/a/4506081/4199504 (and edited by myself)
 		args = list(args)
-		stack = inspect.stack()
-		if len(stack) <= 2:
-			cont = "main scope - "+str(stack[1].file)+':'+str(stack[1].lineno)
-		if len(stack) == 3:
-			cont = "- Main Scope"
-		elif len(stack) >= 4:
-			cont = stack[len(stack) - 2].function
-		cont = str(cont).strip()
-		args.append(cont)
-		return func(self,*args,**kwargs)
+		frame = inspect.currentframe().f_back.f_back
+		code  = frame.f_code
+		globs = frame.f_globals
+		functype = type(lambda: 0)
+		funcs = []
+		for func in gc.get_referrers(code):
+			if type(func) is functype:
+				if getattr(func, "__code__", None) is code:
+					if getattr(func, "__globals__", None) is globs:
+						funcs.append(func)
+						if len(funcs) > 1:
+							break
+		
+		args.append(str(funcs[0])[10:-16] if funcs and len(funcs) == 1 else "")
+		return function_to_call(self,*args,**kwargs)
 	return context_call
 
 class FormatLogger():
@@ -94,7 +100,10 @@ class FormatLogger():
 	@format_arguments
 	@get_context_wrapper
 	def status(self,desc,cont):
-		string = "Status: in {} - {}".format(cont,desc)
+		if cont:
+			string = "Status: in {} - {}".format(cont,desc)
+		else:
+			string = "Status: {}".format(desc)
 		if self.prints <=1:
 			print(string)
 		for file in [self.proccess_status]:
@@ -105,7 +114,7 @@ class FormatLogger():
 	@format_arguments
 	@get_context_wrapper
 	def warning(self,desc,cont,context = False):
-		if context:
+		if context and cont:
 			string = "Warning: in {} - {}".format(cont,desc)
 		else:
 			string = "Warning: {} ".format(desc)
@@ -113,16 +122,18 @@ class FormatLogger():
 			print(string)
 		for file in [self.logfile,self.proccess_status]:
 			write_line_to_file(file,string)
+	
 	@format_arguments
 	def error(self,desc):
 		if self.prints <=2:
 			print(desc)
 		for file in [self.proccess_status]:
 			write_line_to_file(file,desc)
+	
 	@format_arguments
 	@get_context_wrapper
 	def critical(self,desc,cont):# pylint: disable=E1120
-		string = "\n-- CRITIICAL FAILURE in {} --:{}\n".format(cont,desc)
+		string = "\n-- CRITIICAL FAILURE in {} --:{}\n".format(cont if cont else "Main Scope?",desc)
 		print(string)
 		for file in self.files:
 			write_line_to_file(file,string)
@@ -147,6 +158,7 @@ class FormatLogger():
 		if self.prints <=3:
 			print(suc)
 		write_line_to_file(self.failure_file,"Failed {} out of {} total".format(self.num_fail,self.num_fail+self.num_success))
+		write_line_to_file(self.proccess_status,"\n"+suc)
 		write_line_to_file(self.logfile,suc)
 		for fn in self.files:
 			close_up(fn)
