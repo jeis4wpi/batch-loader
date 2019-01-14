@@ -10,10 +10,9 @@ from copy import deepcopy
 import shutil
 import subprocess
 from FormatLog import FormatLogger
-
-logger = FormatLogger('ingest.log','ingest_failures.log','ingest_status.log',truncate = True)
 import get_file
 
+logger = FormatLogger()
 log = logging.getLogger(__name__)
 required_field_names = ( # for csv, things ending in 1 are multi-valued, everything else is scalar
     'files', #required only for ingest of files on this machine
@@ -40,7 +39,7 @@ class IngestController():
         self.works = None #set in self.__iter__() - in subclasses
         self.current = None #set in self.__next__() - in subclasses
         self.failed = [] #set in self.run_ingest_process
-    
+        self.num_success = 0
     def __iter__(self):
         """
         Desc: set up all needed variable for the iteration through all of the works. 
@@ -82,19 +81,24 @@ class IngestController():
             called ingest_item for every work in self, logging when works succeed/fail 
             calls self.end_ingest_process after iteration stops.
         """
-        for row in self:
-            try:
-                upload_id = self.get_identifier(row)
-                row_to_ingest = deepcopy(row) # ingest_item may modify the row, we want to keep original untouched
-                self.ingest_item(row_to_ingest,upload_id)
-            except Exception as e:
-                logger.error(e.__class__.__name__,e)# pylint: disable=E1121
-                logger.failure("%s was not ingested" % (upload_id) )
-                self.failed.append(row)
-                if logger.num_success == 0 and logger.num_fail >= 5:
-                    print("Warning: Ingest Failed frist 5 in a row!")
+        try:    
+            for row in self:
+                try:
+                    upload_id = self.get_identifier(row)
+                    row_to_ingest = deepcopy(row) # ingest_item may modify the row, we want to keep original untouched
+                    self.ingest_item(row_to_ingest,upload_id)
+                except Exception as e:
+                    logger.error(e.__class__.__name__,e)
+                    logger.failure("%s was not ingested" % (upload_id) )
+                    self.failed.append(row)
+                    if logger.num_success == 0 and logger.num_fail >= 5:
+                        print("Warning: Ingest Failed frist 5 in a row!")
 
-            logger.status('End of',upload_id,'\n')# pylint: disable=E1121
+                logger.status('End of',upload_id,'\n')
+        except KeyboardInterrupt as yikes_stop_error:
+            logger.critical(KeyboardInterrupt)
+            self.end_ingest_process()
+            return
         self.end_ingest_process()
     
     def write_metadata_and_ingest(self,metadata,row,raw_download_dir,base_filepath):
@@ -181,7 +185,7 @@ class CsvIngestController(IngestController):
 
         field_names, rows = load_csv(self.file_path)
         self.field_names = field_names
-        logger.info('Loading {} objects from file: {}'.format(len(rows), self.file_path))# pylint: disable=E1120
+        logger.info('Loading {} objects from file: {}'.format(len(rows), self.file_path))
         validate_field_names(field_names,self.url)
         self.singular_field_names, self.repeating_field_names = analyze_field_names(field_names)
         logger.write('')#newline for clean looking log
@@ -214,7 +218,7 @@ class CsvIngestController(IngestController):
         if 'files' in row:
             files_dir = row['files']
         if self.url: #boolean representing if we are using urls to get relevant file(s)
-            logger.status("downloading %s"%(row['fulltext_url']))# pylint: disable=E1120
+            logger.status("downloading %s"%(row['fulltext_url']))
             files_dir, full_file_path = rip_files_from_url(row,self.raw_download_dir)
             #full_file_path  = get_file.download_file(row['fulltext_url'],dwnld_dir = raw_download_dir)
             row['files'] = files_dir
@@ -237,13 +241,20 @@ class CsvIngestController(IngestController):
         # and scalars are key : value
         # the keys are exactly as they will be mapped in hyrax ie "creator" : ["Yoshikami, Katie-Lynn"]
         # instead of "creator1" or any numbered item.
-        logger.success("Ingested",upload_id)# pylint: disable=E1121
-    
+        logger.success("Ingested",upload_id)
+        self.num_success += 1
+
     def get_identifier(self,row):
         #with csv this must contain 1 because title and identifier are not scalar
         return row['title1'] if 'identifier1' not in row else row['identifier1'] #TODO refactor
     
     def end_ingest_process(self):
+        # from pudb import set_trace;set_trace()
+        if self.current < len(self.works) -1 or len(self.failed) + self.num_success < len(self.works):
+            current = len(self.failed) + self.num_success
+            self.failed.extend(self.works[current:])
+            logger.warning("Ingest process did not run to completion. saving the remaining",
+                len(self.works[current:]),"works into ingest.retry in addition to any failures")
         if self.failed:
             retry_file = "ingest.retry"
             with open("ingest.retry",'w') as csvfile:
@@ -254,14 +265,14 @@ class CsvIngestController(IngestController):
             commandline_args = sys.argv[2:]
             path = self.base_filepath+"/"+retry_file
             if self.url:
-                logger.status("to run the ingest again on only the failed works use the following command:\n",# pylint: disable=E1121
+                logger.status("to run the ingest again on only the failed works use the following command:\n",
                               "python batch_loader.py {} {}".format(retry_file,' '.join(commandline_args)))
             else:
-                logger.status("to run the ingest again on only the failed works use the following commands:\n",# pylint: disable=E1121
+                logger.status("to run the ingest again on only the failed works use the following commands:\n",
                               "mv {} {}\n".format(retry_file,path),
                               "python batch_loader.py {} {}".format(path,' '.join(commandline_args)))
         if not self.debug:
-            logger.status('Removing downloaded files from directory tree')# pylint: disable=E1120
+            logger.status('Removing downloaded files from directory tree')
             shutil.rmtree(self.raw_download_dir, ignore_errors=True)
 
         super().end_ingest_process()
@@ -281,7 +292,7 @@ class JsonIngestController(IngestController):
         self.raw_download_dir = tempfile.mkdtemp() # for url downloads
         self.base_filepath = os.path.dirname(os.path.abspath(self.file_path)) #this is where files are if we dont need to download them
         self.works = rows
-        logger.info('Loading {} objects from file: {}'.format(len(self.works), self.file_path))# pylint: disable=E1120
+        logger.info('Loading {} objects from file: {}'.format(len(self.works), self.file_path))
         return self
 
     def __next__(self):
@@ -322,13 +333,21 @@ class JsonIngestController(IngestController):
                 metadata[key] = row[key] 
         ##############################
         self.write_metadata_and_ingest(metadata,row,self.raw_download_dir,self.base_filepath)
-        logger.success("Ingested",upload_id)# pylint: disable=E1121
+        logger.success("Ingested",upload_id)
 
     def get_identifier(self,row):
         #what to call this for logging
         return row['title'] if 'identifier' not in row else row['identifier']
     
     def end_ingest_process(self):
+        # we ended the process early for some reason
+        if self.current < len(self.works) -1 or len(self.failed) + self.num_success < len(self.works):
+            current = len(self.failed) + self.num_success
+            self.failed.extend(self.works[current:])
+            logger.warning("Ingest process did not run to completion. saving the remaining",
+                len(self.works[current:]),"works into ingest.retry in addition to any failures")
+
+        # some works were not ingested
         if self.failed:
             retry_file = "ingest.retry"
             with open(retry_file,'w') as jsonfile:
@@ -337,16 +356,16 @@ class JsonIngestController(IngestController):
             commandline_args = sys.argv[2:]
             path = self.base_filepath+"/"+retry_file
             if self.url:
-                logger.status("to run the ingest again on only the failed works use the following command:\n",# pylint: disable=E1121
+                logger.status("to run the ingest again on only the failed works use the following command:\n",
                               "python batch_loader.py {} {}".format(retry_file,' '.join(commandline_args)))
             else:
-                logger.status("to run the ingest again on only the failed works use the following commands:\n",# pylint: disable=E1121
+                logger.status("to run the ingest again on only the failed works use the following commands:\n",
                               "mv {} {}\n".format(retry_file,path),
                               "python batch_loader.py {} {}".format(path,' '.join(commandline_args)))
         if not self.debug:
-            logger.status('Removing downloaded files from directory tree')# pylint: disable=E1120
+            logger.status('Removing downloaded files from directory tree')
             shutil.rmtree(self.raw_download_dir, ignore_errors=True)
-
+        # close the log and stuff in super class method
         super().end_ingest_process()
 
 class IngestFactory():
@@ -383,7 +402,7 @@ def validate_metadata_json(metadata,use_url):
         if not use_url:
             assert 'files' in metadata
     except Exception as e:
-        logger.critical("%s is a required fields and was not found %s" % (value,e) )# pylint: disable=E1120
+        logger.critical("%s is a required fields and was not found %s" % (value,e) )
         raise
     return
 
@@ -487,7 +506,7 @@ def validate_field_names(field_names,use_url):
         try:
             assert field_name in field_names
         except Exception as e:
-            logger.critical('field %s not in fieldnames' % (field_name) )# pylint: disable=E1120
+            logger.critical('field %s not in fieldnames' % (field_name) )
             raise e
 
 def analyze_field_names(field_names):
@@ -522,8 +541,8 @@ def analyze_field_names(field_names):
         singular_field_names.remove('fulltext_url')
     if 'first_file' in singular_field_names:
         singular_field_names.remove('first_file')
-    logger.status('Singular field names: {}'.format(singular_field_names))# pylint: disable=E1120
-    logger.status('Repeating field names: {}'.format(repeating_field_names))# pylint: disable=E1120
+    logger.status('Singular field names: {}'.format(singular_field_names))
+    logger.status('Repeating field names: {}'.format(repeating_field_names))
     return singular_field_names, repeating_field_names
 
 
@@ -636,19 +655,19 @@ def repo_import(repo_metadata_filepath, title, first_file, other_files, reposito
         log.info('%s is an update.', title)
         command.extend(['--update-item-id=%s' % repository_id])
     space = "\r" + ''.join([' ']*200)
-    logger.info(space+"\r\tCommand is: %s\n" % ' '.join(command))# pylint: disable=E1120
+    logger.info(space+"\r\tCommand is: %s\n" % ' '.join(command))
     if logger.prints < 3:
         output = subprocess.check_output(command, cwd=ingest_path)
     else:
         output = subprocess.check_output(command, cwd=ingest_path,stderr=subprocess.DEVNULL)
     repository_id = output.decode('utf-8').rstrip('\n')
-    logger.info('Repository id for',title,'is', repository_id)# pylint: disable=E1121
+    logger.info('Repository id for',title,'is', repository_id)
     return repository_id
 
 
 if __name__ == '__main__':
     import config
-
+    logger.init('ingest.log','ingest_failures.log','ingest_status.log',truncate = True)
     parser = argparse.ArgumentParser(description='Loads into digitalWPI from CSV (or Json)')
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('file', help='filepath of CSV file or Json')
@@ -664,5 +683,5 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     logger.set_print_level(args.print)
-    logger.status('Start of ingest {}'.format(args))# pylint: disable=E1120
+    logger.status('Start of ingest {}'.format(args))
     IngestFactory.create_controller(args,config).run_ingest_process()

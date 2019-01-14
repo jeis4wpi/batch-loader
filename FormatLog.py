@@ -59,25 +59,19 @@ class FormatLogger():
 	singleton, in order to make everything log to the same files in the right order with out passing in the log class 
 	"""
 	_instance=None
-	def __new__(cls,logfile = None,failure_file = None,proccess_status = None, truncate = False, prints = 1): 
+	def __new__(cls):
 		if cls._instance is None:
 			cls._instance = object.__new__(cls)
-			logfile = 			FormatLogger.logfile	 	 = logfile
-			failure_file = 		FormatLogger.failure_file	 	 = failure_file
-			proccess_status = 	FormatLogger.proccess_status = proccess_status
-			truncate = 			FormatLogger.truncate	 	 = truncate
-			files = 			FormatLogger.files			 = [proccess_status,logfile,failure_file]
-			prints = 			FormatLogger.prints	 		 = prints
-			num_success = 		FormatLogger.num_success	 = 0
-			num_fail = 			FormatLogger.num_fail		 = 0
-			if truncate:
-				truncate_file(logfile)
-			if truncate:
-				truncate_file(failure_file)
-			if truncate:
-				truncate_file(proccess_status)
+			FormatLogger._instance.logfile	 	 = None 
+			FormatLogger._instance.failure_file	 = None 
+			FormatLogger._instance.proccess_status = None
+			FormatLogger._instance.truncate	 	 = None 
+			FormatLogger._instance.files		 = None 
+			FormatLogger._instance.prints	 	 = None 
+			FormatLogger._instance.num_success	 = None 
+			FormatLogger._instance.num_fail		 = None 
 		return cls._instance
-	def __init__(self,logfile=None,failure_file=None,proccess_status=None, truncate = False, prints = 1):
+	def __init__(self):
 		self.truncate = self._instance.truncate
 		self.logfile = self._instance.logfile
 		self.failure_file = self._instance.failure_file
@@ -86,8 +80,37 @@ class FormatLogger():
 		self.prints = self._instance.prints
 		self.num_success = self._instance.num_success
 		self.num_fail = self._instance.num_fail
+
+	def init(self,logfile = None,failure_file = None,proccess_status = None, truncate = False, prints = 1):
+		self.truncate = self._instance.truncatex = truncate
+		self.logfile = self._instance.logfile = logfile
+		self.failure_file = self._instance.failure_file = failure_file
+		self.proccess_status = self._instance.proccess_status = proccess_status
+		self.files = self._instance.files = [proccess_status,logfile,failure_file]
+		self.prints = self._instance.prints = prints
+		self.num_success = self._instance.num_success = 0
+		self.num_fail = self._instance.num_failz = 0
+		if truncate:
+			truncate_file(logfile)
+		if truncate:
+			truncate_file(failure_file)
+		if truncate:
+			truncate_file(proccess_status)
+
 	def set_print_level(self,n):
 		self.prints = self._instance.prints = n
+
+	@format_arguments
+	def output(self,desc,level = 1):
+		if level >=3:
+			level = 3
+		for n,file in enumerate(self.files):
+			if n == level:
+				break
+			write_line_to_file(file,desc)
+		if self.prints <= 1:
+			print(desc)
+
 	@format_arguments
 	def write(self,desc,level = 1):
 		if level >=3:
@@ -96,7 +119,7 @@ class FormatLogger():
 			if n == level:
 				break
 			write_line_to_file(file,desc)
-	
+	 
 	@format_arguments
 	@get_context_wrapper
 	def status(self,desc,cont):
