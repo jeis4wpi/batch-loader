@@ -1,3 +1,4 @@
+import sys
 import argparse
 import logging
 import csv
@@ -5,11 +6,15 @@ import re
 import tempfile
 import json
 import os
+from copy import deepcopy
 import shutil
 import subprocess
-import get_file
-log = logging.getLogger(__name__)
+from FormatLog import FormatLogger
 
+logger = FormatLogger('ingest.log','ingest_failures.log','ingest_status.log',truncate = True)
+import get_file
+
+log = logging.getLogger(__name__)
 required_field_names = ( # for csv, things ending in 1 are multi-valued, everything else is scalar
     'files', #required only for ingest of files on this machine
     'fulltext_url', # required for pulling the files from urls
@@ -18,33 +23,203 @@ required_field_names = ( # for csv, things ending in 1 are multi-valued, everyth
     'creator1',
     'license1'
 )
+class IngestController():
+    """ Object that controls the parsing of metadata, file handling, logging nad ingest into hyrax
+        the super class for other ingest controllers.
+    """
+    def __init__(self):
+        self.file_path = None #set in init() & set_flags()
+        self.ingest_command = None #set in init() & set_flags()
+        self.ingest_path = None #set in init() & set_flags()
+        self.ingest_depositor = None #set in init() & set_flags()
+        self.worktype = None #set in init() & set_flags()
+        self.url = None #set in init() & set_flags()
+        self.debug = None #set in init() & set_flags()
+        self.collection = None #set in init() & set_flags()
+        self.tiff = None #set in init() & set_flags()
+        self.works = None #set in self.__iter__() - in subclasses
+        self.current = None #set in self.__next__() - in subclasses
+        self.failed = [] #set in self.run_ingest_process
+    
+    def __iter__(self):
+        """
+        Desc: set up all needed variable for the iteration through all of the works. 
+        Returns: self (Subclass of IngestController), an iterator object.
+        """
+        raise NotImplementedError
+    
+    def __next__(self):
+        """
+        Returns: the next work
+        Raises StopIteration after final work
+        """
+        raise NotImplementedError
+    
+    def init(self,file_path,ingest_command,ingest_path,ingest_depositor,worktype):
+        """ sets up instance variables """
+        self.file_path = file_path # where the file to be ingested is
+        self.ingest_command = ingest_command # what command to use to ingest (call rake task)
+        self.ingest_path = ingest_path #where is the hyax instance
+        self.ingest_depositor = ingest_depositor # the depositor email
+        self.worktype = worktype # hyrax work type
+
+    def set_flags(self,url = None,debug = None,collection = None, tiff = None):
+        """
+        Desc: set up flags and optional args
+        Args: url (Boolean) if this flag is set, it will look for fulltext_url instead of files
+              tiff (Boolean) if flag is used will generate a tiff from primary file and use that as primary file
+              debug: (Boolean) debug mode
+              collection (str) Optional - the id of the collection to add this work to in hyrax
+        """
+        self.url = url 
+        self.debug = debug
+        self.collection = collection
+        self.tiff = tiff
+
+    def run_ingest_process(self):
+        """
+        Desc: loops though the works given from the iterator returned by self.__iter__()
+            called ingest_item for every work in self, logging when works succeed/fail 
+            calls self.end_ingest_process after iteration stops.
+        """
+        for row in self:
+            try:
+                upload_id = self.get_identifier(row)
+                row_to_ingest = deepcopy(row) # ingest_item may modify the row, we want to keep original untouched
+                self.ingest_item(row_to_ingest,upload_id)
+            except Exception as e:
+                logger.error(e.__class__.__name__,e)# pylint: disable=E1121
+                logger.failure("%s was not ingested" % (upload_id) )
+                self.failed.append(row)
+                if logger.num_success == 0 and logger.num_fail >= 5:
+                    print("Warning: Ingest Failed frist 5 in a row!")
+
+            logger.status('End of',upload_id,'\n')# pylint: disable=E1121
+        self.end_ingest_process()
+    
+    def write_metadata_and_ingest(self,metadata,row,raw_download_dir,base_filepath):
+        """ takes the metadata for a work,  ingests the work into hyrax using rake task in config.py
+        """
+        #get configuration
+        ingest_command = self.ingest_command
+        ingest_path = self.ingest_path
+        ingest_depositor = self.ingest_depositor
+        worktype = self.worktype
+        debug = self.debug
+        collection = self.collection
 
 
+        metadata_temp_path = tempfile.mkdtemp()
+        metadata_filepath = os.path.join(metadata_temp_path, 'metadata.json')
 
-def run_ingest_process_csv(csv_path,ingest_command,ingest_path,ingest_depositor,worktype, url = None,debug = None,collection = None, tiff = None):
-    logging.basicConfig(
-        level=logging.DEBUG if debug else logging.INFO
-    )
-    logging.basicConfig(level=logging.DEBUG)
+        try:
+            with open(metadata_filepath, 'w') as repo_metadata_file:
+                json.dump(metadata, repo_metadata_file, indent=4)
+                log.debug('Writing to {}: {}'.format(metadata_filepath, json.dumps(metadata)))
+            try:
+                first_file, other_files = find_files(row['files'], row.get('first_file'), base_filepath)
+                # TODO: Handle passing existing repo id
+                repo_id = repo_import(metadata_filepath, metadata['title'], first_file, other_files, None,
+                                      ingest_command,
+                                      ingest_path,
+                                      ingest_depositor,
+                                      worktype,
+                                      collection)
+                # TODO: Write repo id to output CSV
+            except Exception as e:
+                # TODO: Record exception to output CSV
+                raise e
+        finally:
+            if (not debug) and os.path.exists(metadata_filepath):
+                shutil.rmtree(metadata_temp_path, ignore_errors=True)
+                #shutil.rmtree(raw_download_dir, ignore_errors=True)
+    
+    def get_identifier(self,row):
+        raise NotImplementedError
+    
+    def ingest_item(self,row,upload_id):
+        """
+        Desc: this method takes in a row and the identifier for the work and 
+            prepares metadata and files then ingests said work into hyrax.
+        Args:   row: the object representing the work to be ingested
+                upload_id: (str) the name for the work for logging purposes
+        Returns void - nothing is returned, the work is ingested
+        """
+        raise NotImplementedError
+    
+    def end_ingest_process(self):
+        """
+        Desc: does anything needed to be done after the process is complete 
+        """
+        logger.close()
 
-    field_names, rows = load_csv(csv_path)
-    log.info('Loading {} object from {}'.format(len(rows), csv_path))
-    validate_field_names(field_names,url)
-    singular_field_names, repeating_field_names = analyze_field_names(field_names)
-    base_filepath = os.path.dirname(os.path.abspath(csv_path))
-    raw_download_dir = tempfile.mkdtemp()
-    for row in rows:
+class CsvIngestController(IngestController):
+    def __init__(self,*args,**kwargs):
+        super().__init__(*args,**kwargs)
+        # init these for the iteration of works specifically for CSVs
+        self.singular_field_names = None # fields that will be scalar in ingest
+        self.repeating_field_names = None # fields that will be a list
+        self.current = 0 # the index of the current work we going to ingest
+        self.base_filepath = None # where the csv is stored, used for non url ingests
+        self.raw_download_dir = None # temperary dircectory to download work related files
+        self.field_names = None # original field names given in the csv
+    
+    def __iter__(self):
+        """
+        Desc: set up all needed variable for the iteration through all of the works
+            in a CSV. 
+        Returns: self (CsvIngestController), an iterator object.
+
+        """
+        self.base_filepath = os.path.dirname(os.path.abspath(self.file_path))
+        self.raw_download_dir = tempfile.mkdtemp()
+
+        logging.basicConfig(
+            level=logging.DEBUG if self.debug else logging.INFO
+        )
+        logging.basicConfig(level=logging.DEBUG)
+
+        field_names, rows = load_csv(self.file_path)
+        self.field_names = field_names
+        logger.info('Loading {} objects from file: {}'.format(len(rows), self.file_path))# pylint: disable=E1120
+        validate_field_names(field_names,self.url)
+        self.singular_field_names, self.repeating_field_names = analyze_field_names(field_names)
+        logger.write('')#newline for clean looking log
+        self.works = rows
+        self.current = 0
+        return self
+
+    def __next__(self):
+        """
+        get the next work in the CSV 
+        """
+        try:
+            current_work = self.works[self.current]
+            self.current+=1
+            return current_work
+        except IndexError:
+            raise StopIteration
+
+    def ingest_item(self,row,upload_id):
+        """
+        Desc: this method takes in a row and the identifier for the work and 
+            prepares metadata and files then ingests said work into hyrax.
+        Args:   row:
+                upload_id: (str) the name for the work for logging purposes
+        Returns void - nothing is returned, the work is ingested
+        """
+        logger.status("uploading",upload_id)
         if 'first_file' in row:
             full_file_path = row['first_file']
         if 'files' in row:
             files_dir = row['files']
-        if url: #boolean representing if we are using urls to get relevant file(s)
-            print(row['fulltext_url'])
-            files_dir, full_file_path = rip_files_from_url(row,raw_download_dir)
+        if self.url: #boolean representing if we are using urls to get relevant file(s)
+            logger.status("downloading %s"%(row['fulltext_url']))# pylint: disable=E1120
+            files_dir, full_file_path = rip_files_from_url(row,self.raw_download_dir)
             #full_file_path  = get_file.download_file(row['fulltext_url'],dwnld_dir = raw_download_dir)
             row['files'] = files_dir
             row['first_file'] = full_file_path
-        if tiff: # if we want to generate a tiff, and have it be the primary file
+        if self.tiff: # if we want to generate a tiff, and have it be the primary file
             if 'files' not in row:
                 raise ValueError("no files "+str(row))
             if isinstance(row['files'], list):
@@ -55,40 +230,88 @@ def run_ingest_process_csv(csv_path,ingest_command,ingest_path,ingest_depositor,
                 raise ValueError("no files, cause files is not string or path to dir "+str(row))
             row['files'] = files_dir
             row['first_file'] = full_file_path
-        # from pudb import set_trace;set_trace()
-        metadata = create_repository_metadata(row, singular_field_names, repeating_field_names)#todo
-        write_metadata_and_ingest(metadata,row,raw_download_dir,base_filepath,ingest_command,ingest_path,ingest_depositor,worktype, url,debug,collection,tiff)
+        metadata = create_repository_metadata(row, self.singular_field_names, self.repeating_field_names)#todo
+        self.write_metadata_and_ingest(metadata,row,self.raw_download_dir,self.base_filepath)
         # at this point the metadata is a dictionary
         # of all the metadata where reapeating values are key : [value,value]
         # and scalars are key : value
         # the keys are exactly as they will be mapped in hyrax ie "creator" : ["Yoshikami, Katie-Lynn"]
         # instead of "creator1" or any numbered item.
-    if not debug:
-        shutil.rmtree(raw_download_dir, ignore_errors=True)
+        logger.success("Ingested",upload_id)# pylint: disable=E1121
+    
+    def get_identifier(self,row):
+        #with csv this must contain 1 because title and identifier are not scalar
+        return row['title1'] if 'identifier1' not in row else row['identifier1'] #TODO refactor
+    
+    def end_ingest_process(self):
+        if self.failed:
+            retry_file = "ingest.retry"
+            with open("ingest.retry",'w') as csvfile:
+                writer = csv.DictWriter(csvfile,fieldnames = self.field_names)
+                writer.writeheader()
+                for row in self.failed:
+                    writer.writerow(row)
+            commandline_args = sys.argv[2:]
+            path = self.base_filepath+"/"+retry_file
+            if self.url:
+                logger.status("to run the ingest again on only the failed works use the following command:\n",# pylint: disable=E1121
+                              "python batch_loader.py {} {}".format(retry_file,' '.join(commandline_args)))
+            else:
+                logger.status("to run the ingest again on only the failed works use the following commands:\n",# pylint: disable=E1121
+                              "mv {} {}\n".format(retry_file,path),
+                              "python batch_loader.py {} {}".format(path,' '.join(commandline_args)))
+        if not self.debug:
+            logger.status('Removing downloaded files from directory tree')# pylint: disable=E1120
+            shutil.rmtree(self.raw_download_dir, ignore_errors=True)
 
-def do_ingest_with_json(json_file,ingest_command,ingest_path,ingest_depositor,worktype,
-    url = None,debug = None,collection = None, tiff = None):
-    """ a function that ingests works given a json file containing the metadata for the works 
-    """
-    with open(json_file,'r') as jf:
-        rows = json.load(jf)
-        ### required for only certain types of ingest ###
-        raw_download_dir = tempfile.mkdtemp() # for url downloads
-        base_filepath = os.path.dirname(os.path.abspath(json_file)) #this is where files are if we dont need to download them
-        ################################################
-    for row in rows:
-        validate_metadata_json(row,url) # ensures that the required stuff is there and that its the right type
-        if not url:
+        super().end_ingest_process()
+
+class JsonIngestController(IngestController):
+    def __init__(self,*args,**kwargs):
+        super().__init__(*args,**kwargs)
+        self.current = 0
+        self.base_filepath = None
+        self.raw_download_dir = None
+
+    def __iter__(self):
+        #self.file_path,ingest_command,ingest_path,ingest_depositor,worktype,url = None,debug = None,collection = None, tiff = None
+        with open(self.file_path,'r') as jf:
+            rows = json.load(jf)
+            ### required for only certain types of ingest ###
+        self.raw_download_dir = tempfile.mkdtemp() # for url downloads
+        self.base_filepath = os.path.dirname(os.path.abspath(self.file_path)) #this is where files are if we dont need to download them
+        self.works = rows
+        logger.info('Loading {} objects from file: {}'.format(len(self.works), self.file_path))# pylint: disable=E1120
+        return self
+
+    def __next__(self):
+        try:
+            current_work = self.works[self.current]
+            self.current+=1
+            return current_work
+        except IndexError:
+            raise StopIteration
+
+    def ingest_item(self,row,upload_id):
+        """
+        Desc: this method takes in a row and the identifier for the work and 
+            prepares metadata and files then ingests said work into hyrax.
+        Args:   row:
+                upload_id: (str) the name for the work for logging purposes
+        Returns void - nothing is returned, the work is ingested
+        """
+        logger.status("uploading",upload_id)
+        validate_metadata_json(row,self.url) # ensures that the required stuff is there and that its the right type
+        if not self.url:
             files_dir=row['files']
             full_file_path=row['first_file']
-        if url:
-            files_dir, full_file_path = rip_files_from_url(row,raw_download_dir)
-        if tiff:
+        if self.url:
+            files_dir, full_file_path = rip_files_from_url(row,self.raw_download_dir)
+        if self.tiff:
             if not os.path.isdir(files_dir):
                 files_dir,full_file_path = make_tiff_from_file(full_file_path,new_dir=True)
             else:
                 files_dir,full_file_path = make_tiff_from_file(full_file_path)
-
 
         ### prepare row for ingest ###
         row['files'] = files_dir
@@ -97,12 +320,47 @@ def do_ingest_with_json(json_file,ingest_command,ingest_path,ingest_depositor,wo
         for key in row:
             if key != 'files' and key != 'first_file' and key != 'resources' and key != 'fulltext_url':
                 metadata[key] = row[key] 
-
         ##############################
+        self.write_metadata_and_ingest(metadata,row,self.raw_download_dir,self.base_filepath)
+        logger.success("Ingested",upload_id)# pylint: disable=E1121
 
-        write_metadata_and_ingest(metadata,row,raw_download_dir,base_filepath,ingest_command,ingest_path,ingest_depositor,worktype, url,debug,collection,tiff)
-    if not debug:
-        shutil.rmtree(raw_download_dir, ignore_errors=True)
+    def get_identifier(self,row):
+        #what to call this for logging
+        return row['title'] if 'identifier' not in row else row['identifier']
+    
+    def end_ingest_process(self):
+        if self.failed:
+            retry_file = "ingest.retry"
+            with open(retry_file,'w') as jsonfile:
+                # json_dump = [] # prepared records 
+                jsonfile.write(json.dumps(self.failed, indent=4))
+            commandline_args = sys.argv[2:]
+            path = self.base_filepath+"/"+retry_file
+            if self.url:
+                logger.status("to run the ingest again on only the failed works use the following command:\n",# pylint: disable=E1121
+                              "python batch_loader.py {} {}".format(retry_file,' '.join(commandline_args)))
+            else:
+                logger.status("to run the ingest again on only the failed works use the following commands:\n",# pylint: disable=E1121
+                              "mv {} {}\n".format(retry_file,path),
+                              "python batch_loader.py {} {}".format(path,' '.join(commandline_args)))
+        if not self.debug:
+            logger.status('Removing downloaded files from directory tree')# pylint: disable=E1120
+            shutil.rmtree(self.raw_download_dir, ignore_errors=True)
+
+        super().end_ingest_process()
+
+class IngestFactory():
+    @classmethod
+    def create_controller(cls,args,config):
+        if args.json:#Json
+            ingest_controller = JsonIngestController()
+        else:#csv, defualt
+            ingest_controller = CsvIngestController()
+    
+        ingest_controller.init(args.file,config.ingest_command,config.ingest_path,config.ingest_depositor,args.worktype)
+        ingest_controller.set_flags(url = args.url,debug = args.debug,collection = args.collection,tiff = args.tiff)
+        return ingest_controller
+
 
 def validate_metadata_json(metadata,use_url):
     """ 
@@ -113,16 +371,20 @@ def validate_metadata_json(metadata,use_url):
     """
     log.debug('Validating field names for json ingest')
     scalars, lists = analyze_field_names(required_field_names)
-    for value in scalars:
-        assert value in metadata
-        assert not isinstance(metadata[value], list)
-    for value in lists:
-        assert value in metadata
-        assert isinstance(metadata[value], list)
-    if use_url:
-        assert 'fulltext_url' in metadata
-    if not use_url:
-        assert 'files' in metadata
+    try:
+        for value in scalars:
+            assert value in metadata
+            assert not isinstance(metadata[value], list)
+        for value in lists:
+            assert value in metadata
+            assert isinstance(metadata[value], list)
+        if use_url:
+            assert 'fulltext_url' in metadata
+        if not use_url:
+            assert 'files' in metadata
+    except Exception as e:
+        logger.critical("%s is a required fields and was not found %s" % (value,e) )# pylint: disable=E1120
+        raise
     return
 
 
@@ -146,6 +408,7 @@ def rip_files_from_url(row,raw_download_dir):
         get_file.mkdir(proj_dir)
 
         if not os.path.exists(proj_dir):
+            logger.error('could not create project dir')
             raise FileNotFoundError('could not create project dir')
     else:
         proj_dir = tempfile.mkdtemp(dir=raw_download_dir)
@@ -171,7 +434,7 @@ def make_tiff_from_file(full_file_path,files = None,new_dir = False):
     return os.path.dirname(generated_tiff),generated_tiff
 
 def write_metadata_and_ingest(metadata,row,raw_download_dir,base_filepath,ingest_command,ingest_path,ingest_depositor,worktype, url = None,debug = None,collection = None, tiff = None):
-    """ takes the metadata for a work, 
+    """ takes the metadata for a work,  ingests the work into hyrax using rake task in config.py
     """
     metadata_temp_path = tempfile.mkdtemp()
     metadata_filepath = os.path.join(metadata_temp_path, 'metadata.json')
@@ -196,10 +459,7 @@ def write_metadata_and_ingest(metadata,row,raw_download_dir,base_filepath,ingest
     finally:
         if (not debug) and os.path.exists(metadata_filepath):
             shutil.rmtree(metadata_temp_path, ignore_errors=True)
-            if os.path.exists(raw_download_dir):
-                print("ensure to remove {}\nit contians all downloaded files".format(raw_download_dir))
-                print("however until sidekiq is done they should persist")
-                #shutil.rmtree(raw_download_dir, ignore_errors=True)
+            #shutil.rmtree(raw_download_dir, ignore_errors=True)
 
 
 def load_csv(filepath):
@@ -224,9 +484,11 @@ def validate_field_names(field_names,use_url):
         if field_name == 'fulltext_url':
             if not use_url:
                 continue #we dont need this if we have paths instead of urls
-        print(field_name)
-        assert field_name in field_names
-
+        try:
+            assert field_name in field_names
+        except Exception as e:
+            logger.critical('field %s not in fieldnames' % (field_name) )# pylint: disable=E1120
+            raise e
 
 def analyze_field_names(field_names):
     """
@@ -260,8 +522,8 @@ def analyze_field_names(field_names):
         singular_field_names.remove('fulltext_url')
     if 'first_file' in singular_field_names:
         singular_field_names.remove('first_file')
-    log.debug('Singular field names: {}'.format(singular_field_names))
-    log.debug('Repeating field names: {}'.format(repeating_field_names))
+    logger.status('Singular field names: {}'.format(singular_field_names))# pylint: disable=E1120
+    logger.status('Repeating field names: {}'.format(repeating_field_names))# pylint: disable=E1120
     return singular_field_names, repeating_field_names
 
 
@@ -338,8 +600,7 @@ def find_files(row_filepath, row_first_filepath, base_filepath):
     return first_file, files
 
 
-def repo_import(repo_metadata_filepath, title, first_file, other_files, repository_id, ingest_command,
-                ingest_path, ingest_depositor,worktype,collection = None):
+def repo_import(repo_metadata_filepath, title, first_file, other_files, repository_id, ingest_command, ingest_path, ingest_depositor,worktype,collection = None):
     """
     Desc: this function takes in relevant information and paths and calls the rake
         task to ingest the work into Hyrax
@@ -360,7 +621,7 @@ def repo_import(repo_metadata_filepath, title, first_file, other_files, reposito
         collectoin (str): the id of the collection in hyrax to add this work to
     Returns: the id of the work in hyrax
     """
-    log.info('Importing %s.', title)
+    logger.info('Importing', title)
     # rake gwss:ingest_etd -- --manifest='path-to-manifest-json-file' --primaryfile='path-to-primary-attachment-file/myfile.pdf' --otherfiles='path-to-all-other-attachments-folder'
     command = ingest_command.split(' ') + ['--',
                                            '--manifest=%s' % repo_metadata_filepath,
@@ -374,10 +635,14 @@ def repo_import(repo_metadata_filepath, title, first_file, other_files, reposito
     if repository_id:
         log.info('%s is an update.', title)
         command.extend(['--update-item-id=%s' % repository_id])
-    log.info("Command is: %s" % ' '.join(command))
-    output = subprocess.check_output(command, cwd=ingest_path)
+    space = "\r" + ''.join([' ']*200)
+    logger.info(space+"\r\tCommand is: %s\n" % ' '.join(command))# pylint: disable=E1120
+    if logger.prints < 3:
+        output = subprocess.check_output(command, cwd=ingest_path)
+    else:
+        output = subprocess.check_output(command, cwd=ingest_path,stderr=subprocess.DEVNULL)
     repository_id = output.decode('utf-8').rstrip('\n')
-    log.info('Repository id for %s is %s', title, repository_id)
+    logger.info('Repository id for',title,'is', repository_id)# pylint: disable=E1121
     return repository_id
 
 
@@ -392,10 +657,12 @@ if __name__ == '__main__':
     parser.add_argument('--collection',type=str,help='the id of the collection to add this work to in hyrax',default=None)
     parser.add_argument('--tiff',action='store_true',help='if flag is used will generate a tiff from primary file and use that as primary file')
     parser.add_argument('--json', action='store_true',help='if the file containing the metadata for the works is a json file, use this flag.')
+    parser.add_argument('--print',type=int,help="how much of the log messages should be printed......"+\
+        "\n1: status, errors, warnings, successful ingests, failed ingests, critical failurs, ending summary....\n"+\
+        "2: everything but status............................\n"+\
+        "3: just success and failues + summary and critiacal.\n4+: nothing but critical failues",default=1)
     args = parser.parse_args()
-    if args.json:
-        do_ingest_with_json(args.file,config.ingest_command, config.ingest_path, config.ingest_depositor,
-            args.worktype,url = args.url,debug = args.debug,collection = args.collection,tiff = args.tiff)
-    else:
-        run_ingest_process_csv(args.file,config.ingest_command, config.ingest_path, config.ingest_depositor,
-            args.worktype,url = args.url,debug = args.debug,collection = args.collection,tiff = args.tiff)
+
+    logger.set_print_level(args.print)
+    logger.status('Start of ingest {}'.format(args))# pylint: disable=E1120
+    IngestFactory.create_controller(args,config).run_ingest_process()
