@@ -87,6 +87,7 @@ class IngestController():
                     upload_id = self.get_identifier(row)
                     row_to_ingest = deepcopy(row) # ingest_item may modify the row, we want to keep original untouched
                     self.ingest_item(row_to_ingest,upload_id)
+                    self.num_success += 1
                 except Exception as e:
                     logger.error(e.__class__.__name__,e)
                     logger.failure("%s was not ingested" % (upload_id) )
@@ -242,7 +243,6 @@ class CsvIngestController(IngestController):
         # the keys are exactly as they will be mapped in hyrax ie "creator" : ["Yoshikami, Katie-Lynn"]
         # instead of "creator1" or any numbered item.
         logger.success("Ingested",upload_id)
-        self.num_success += 1
 
     def get_identifier(self,row):
         #with csv this must contain 1 because title and identifier are not scalar
