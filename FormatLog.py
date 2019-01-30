@@ -190,9 +190,11 @@ class FormatLogger():
 			write_line_to_file(file,"FAILURE: " + desc)
 
 	def total_time_stamp(self,start,end):
-		write_line_to_file(self.total_time_file,str(self.current_id) + '{|-|}' + str(end-start))
+		write_line_to_file(self.total_time_file,
+			str(self.current_id)+'{|-|}'+str(end-start)+'{|-|}'+str(datetime.now()))
 	def time_stamp(self,start,end):
-		write_line_to_file(self.time_file,str(self.current_id) + '{|-|}' + str(end-start))
+		write_line_to_file(self.time_file,
+			str(self.current_id)+'{|-|}'+str(end-start)+'{|-|}'+str(datetime.now()))
 
 	def close(self):
 		suc = "Succeded on {} out of {} total".format(self.num_success,self.num_fail+self.num_success)
