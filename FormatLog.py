@@ -63,42 +63,55 @@ class FormatLogger():
 		if cls._instance is None:
 			cls._instance = object.__new__(cls)
 			FormatLogger._instance.logfile	 	 = None 
-			FormatLogger._instance.failure_file	 = None 
+			FormatLogger._instance.failure_file	 = None
+			FormatLogger._instance.time_file	 = None #not part of normal log
+			FormatLogger._instance.total_time_file = None #not part of normal log
 			FormatLogger._instance.proccess_status = None
 			FormatLogger._instance.truncate	 	 = None 
-			FormatLogger._instance.files		 = None 
-			FormatLogger._instance.prints	 	 = None 
-			FormatLogger._instance.num_success	 = None 
-			FormatLogger._instance.num_fail		 = None 
+			FormatLogger._instance.files		 = []
+			FormatLogger._instance.prints	 	 = 0 
+			FormatLogger._instance.num_success	 = 0 
+			FormatLogger._instance.num_fail		 = 0
+			FormatLogger._instance.current_id	 = None
 		return cls._instance
 	def __init__(self):
 		self.truncate = self._instance.truncate
 		self.logfile = self._instance.logfile
 		self.failure_file = self._instance.failure_file
 		self.proccess_status = self._instance.proccess_status
+		self.time_file = self._instance.time_file
+		self.total_time_file = self._instance.total_time_file
 		self.files = self._instance.files
 		self.prints = self._instance.prints
 		self.num_success = self._instance.num_success
 		self.num_fail = self._instance.num_fail
+		self.current_id = self._instance.current_id
 
-	def init(self,logfile = None,failure_file = None,proccess_status = None, truncate = False, prints = 1):
+
+	def init(self,logfile = None,failure_file = None,proccess_status = None,time_file = None,truncate = False,prints = 1):
 		self.truncate = self._instance.truncatex = truncate
 		self.logfile = self._instance.logfile = logfile
 		self.failure_file = self._instance.failure_file = failure_file
 		self.proccess_status = self._instance.proccess_status = proccess_status
-		self.files = self._instance.files = [proccess_status,logfile,failure_file]
+		self.time_file = self._instance.time_file = time_file
+		if time_file:
+			self.total_time_file = self._instance.total_time_file = f"total_{str(self.time_file)}"
+		else:
+			self.total_time_file = self._instance.total_time_file
+		self.files = self._instance.files = [self.proccess_status,self.logfile,self.failure_file,self.time_file,self.total_time_file]
 		self.prints = self._instance.prints = prints
 		self.num_success = self._instance.num_success = 0
-		self.num_fail = self._instance.num_failz = 0
+		self.num_fail = self._instance.num_fail = 0
+		self.current_id = self._instance.current_id
+		# from pudb import set_trace;set_trace()
 		if truncate:
-			truncate_file(logfile)
-		if truncate:
-			truncate_file(failure_file)
-		if truncate:
-			truncate_file(proccess_status)
+			for file in self.files:
+				truncate_file(file)
 
 	def set_print_level(self,n):
 		self.prints = self._instance.prints = n
+	def set_current_id(self,value):
+		self.current_id = self._instance.current_id = value
 
 	@format_arguments
 	def output(self,desc,level = 1):
@@ -176,6 +189,11 @@ class FormatLogger():
 		for file in self.files:
 			write_line_to_file(file,"FAILURE: " + desc)
 
+	def total_time_stamp(self,start,end):
+		write_line_to_file(self.total_time_file,str(self.current_id) + '{|-|}' + str(end-start))
+	def time_stamp(self,start,end):
+		write_line_to_file(self.time_file,str(self.current_id) + '{|-|}' + str(end-start))
+
 	def close(self):
 		suc = "Succeded on {} out of {} total".format(self.num_success,self.num_fail+self.num_success)
 		if self.prints <=3:
@@ -188,6 +206,8 @@ class FormatLogger():
 
 
 def write_line_to_file(file,line=None):
+	if not file:
+		return
 	if line is None:
 		line = ''
 	# with FileLock(file):
@@ -196,11 +216,15 @@ def write_line_to_file(file,line=None):
 
 def truncate_file(path):
 	# with FileLock(path):
+	if not path:
+		return
 	with open(path,'w') as logfile:
 		logfile.write('---- logging on {} ----\n'.format(datetime.now()))
 
 def close_up(path):
 	# with FileLock(path):
+	if not path:
+		return
 	with open(path,'a') as logfile:
 		logfile.write('\n---- end of logging session {} ----\n\n'.format(datetime.now()))
 	pass

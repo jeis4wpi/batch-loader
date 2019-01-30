@@ -7,10 +7,12 @@ import tempfile
 import json
 import os
 from copy import deepcopy
+import time
 import shutil
 import subprocess
 from FormatLog import FormatLogger
 import get_file
+
 
 logger = FormatLogger()
 log = logging.getLogger(__name__)
@@ -85,6 +87,8 @@ class IngestController():
             for row in self:
                 try:
                     upload_id = self.get_identifier(row)
+                    logger.set_current_id(upload_id)
+                    start = time.time()
                     row_to_ingest = deepcopy(row) # ingest_item may modify the row, we want to keep original untouched
                     self.ingest_item(row_to_ingest,upload_id)
                     self.num_success += 1
@@ -94,7 +98,8 @@ class IngestController():
                     self.failed.append(row)
                     if logger.num_success == 0 and logger.num_fail >= 5:
                         print("Warning: Ingest Failed frist 5 in a row!")
-
+                end = time.time()
+                logger.total_time_stamp(start,end)
                 logger.status('End of',upload_id,'\n')
         except KeyboardInterrupt as yikes_stop_error:
             logger.critical(KeyboardInterrupt)
@@ -650,24 +655,31 @@ def repo_import(repo_metadata_filepath, title, first_file, other_files, reposito
     if collection:
         command += ['--collection=%s' % collection]
     if other_files:
-        command.extend(['--otherfiles=%s' % '{|,|}'.join(other_files)]) # our files have commas
+        command.extend(['--otherfiles=%s' % '{|,|}'.join(other_files)]) # our file names have commas :/ so deliniate with {|,|}
     if repository_id:
         log.info('%s is an update.', title)
         command.extend(['--update-item-id=%s' % repository_id])
     space = "\r" + ''.join([' ']*200)
     logger.info(space+"\r\tCommand is: %s\n" % ' '.join(command))
+    time1 = time.time()#start time stamp
     if logger.prints < 3:
         output = subprocess.check_output(command, cwd=ingest_path)
     else:
         output = subprocess.check_output(command, cwd=ingest_path,stderr=subprocess.DEVNULL)
+    time2 = time.time()#end time stamp
+    logger.time_stamp(time1,time2)
+
     repository_id = output.decode('utf-8').rstrip('\n')
     logger.info('Repository id for',title,'is', repository_id)
     return repository_id
 
+def get_identifier(metadata):
+    #what to call this for logging
+    return metadata['title'] if 'identifier' not in metadata else metadata['identifier']
 
 if __name__ == '__main__':
     import config
-    logger.init('ingest.log','ingest_failures.log','ingest_status.log',truncate = True)
+    
     parser = argparse.ArgumentParser(description='Loads into digitalWPI from CSV (or Json)')
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('file', help='filepath of CSV file or Json')
@@ -676,11 +688,13 @@ if __name__ == '__main__':
     parser.add_argument('--collection',type=str,help='the id of the collection to add this work to in hyrax',default=None)
     parser.add_argument('--tiff',action='store_true',help='if flag is used will generate a tiff from primary file and use that as primary file')
     parser.add_argument('--json', action='store_true',help='if the file containing the metadata for the works is a json file, use this flag.')
+    parser.add_argument('--time',type=str,help='the file to log timing and performance to [default: None]',default=None)
     parser.add_argument('--print',type=int,help="how much of the log messages should be printed......"+\
         "\n1: status, errors, warnings, successful ingests, failed ingests, critical failurs, ending summary....\n"+\
         "2: everything but status............................\n"+\
         "3: just success and failues + summary and critiacal.\n4+: nothing but critical failues",default=1)
     args = parser.parse_args()
+    logger.init('ingest.log','ingest_failures.log','ingest_status.log',time_file=args.time,truncate = True)
 
     logger.set_print_level(args.print)
     logger.status('Start of ingest {}'.format(args))
