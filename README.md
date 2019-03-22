@@ -6,18 +6,24 @@ Requires Python >= 3.5
 
 1. Get this code.
 
-        git clone https://github.com/gwu-libraries/batch-loader.git
+        `git clone git@github.com:DigitalWPI/batch-loader.git`
+        OR
+        `git clone https://github.com/DigitalWPI/batch-loader.git`
 
 2. Create a virtualenv.
 
         virtualenv -p python3 ENV
         source ENV/bin/activate
 
-3. Copy configuration file.
+3. install needed python libraries 
+
+        pip install -r requirements.txt
+
+4. Copy configuration file.
 
         cp example.config.py config.py
 
-4. Edit configuration file. The file is annotated with descriptions of the configuration options.
+5. Edit configuration file. The file is annotated with descriptions of the configuration options.
 
 ## Running
 To run batch-loader:
@@ -26,6 +32,11 @@ To run batch-loader:
     OR if instead of haveing the column `files` you have the column `fulltext_url` of the related resource
     `python batch_loader.py <path to csv> --url`
     see example.csv and url_example.csv
+    finally it can also be run on json files, using the same elements as the csv. 
+    `python batch_loader.py <path to json file> --json`
+    there are more options as well such as what collections to ingest to if your
+    rake task can handle that, whether or not to generate tiffs, and print level.
+    use `python batch_loader.py --help` to see all the options
 
 ## Specification of CSV
 1. The first row must contain the field names. (unless --url is given)
