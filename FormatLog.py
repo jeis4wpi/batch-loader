@@ -1,8 +1,6 @@
 import inspect
 import gc
 from datetime import datetime
-from filelock import FileLock
-
 #decorator functions 
 def format_arguments(func):
 	""" formate many args into one string, then calls decorated function with string formatted together
