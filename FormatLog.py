@@ -60,14 +60,14 @@ class FormatLogger():
 	def __new__(cls):
 		if cls._instance is None:
 			cls._instance = object.__new__(cls)
-			FormatLogger._instance.logfile	 	 = None 
-			FormatLogger._instance.failure_file	 = None 
-			FormatLogger._instance.proccess_status = None
-			FormatLogger._instance.truncate	 	 = None 
-			FormatLogger._instance.files		 = None 
-			FormatLogger._instance.prints	 	 = None 
-			FormatLogger._instance.num_success	 = None 
-			FormatLogger._instance.num_fail		 = None 
+			FormatLogger._instance.logfile	 	 = "/dev/null" 
+			FormatLogger._instance.failure_file	 = "/dev/null" 
+			FormatLogger._instance.proccess_status = "/dev/null"
+			FormatLogger._instance.truncate	 	 = False 
+			FormatLogger._instance.files		 = [] 
+			FormatLogger._instance.prints	 	 = 0 
+			FormatLogger._instance.num_success	 = 0 
+			FormatLogger._instance.num_fail		 = 0 
 		return cls._instance
 	def __init__(self):
 		self.truncate = self._instance.truncate
