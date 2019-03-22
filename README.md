@@ -6,9 +6,9 @@ Requires Python >= 3.5
 
 1. Get this code.
 
-        `git clone git@github.com:DigitalWPI/batch-loader.git`
+        git clone git@github.com:DigitalWPI/batch-loader.git
         OR
-        `git clone https://github.com/DigitalWPI/batch-loader.git`
+        git clone https://github.com/DigitalWPI/batch-loader.git
 
 2. Create a virtualenv.
 
