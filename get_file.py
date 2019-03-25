@@ -119,8 +119,12 @@ def download_file(url,dwnld_dir = None):
 		try:
 			if logger.prints <2:
 				print('downloading file from {}'.format(url))
-
-			cont_disp = r.headers['content-disposition']
+			if 'content-disposition' in r.headers:
+				cont_disp = r.headers['content-disposition']
+			elif 'Content-Disposition' in r.headers:
+				cont_disp = r.headers['Content-Disposition']
+			else: 
+				cont_disp = ""
 			url_filename = re.findall("filename=(.+)", cont_disp)
 			if url_filename and url_filename[0]:
 				fn = url_filename[0]
