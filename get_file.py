@@ -22,7 +22,7 @@ def create_tiff_imagemagick(file):
 	Returns: path to newly created tiff
 	"""
 	logger.info("creating tiff for",file,'...')
-	tiff = file + '.tiff'
+	tiff = os.path.splitext(file)[0] + '.tiff'
 	return_code = subprocess.run(['convert',file,tiff], stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
 	# if return_code != 0:
 	# 	raise Exception("non zero return code for image magick convert, if you are on windows this doesnt work.\ncommand:convert {} {}".format(file,tiff))
