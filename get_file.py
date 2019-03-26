@@ -83,7 +83,11 @@ def mv(path,new_path,args = None):
 
 def download_file(url,dwnld_dir = None):
 	""" if the given url is valid and we have access to the file attached to it. this funciton
-	will download said file to the directory given or just put it in the current dir."""
+	will download said file to the directory given or just put it in the current dir.
+	args:
+		url: the url
+		dwnld_dir: the path to dir to download to
+	"""
 	local_filename = get_file_name_from_url(url)
 	if dwnld_dir is not None:
 		if dwnld_dir[-1] == '/':
@@ -115,6 +119,16 @@ def download_file(url,dwnld_dir = None):
 		try:
 			if logger.prints <2:
 				print('downloading file from {}'.format(url))
+			if 'content-disposition' in r.headers:
+				cont_disp = r.headers['content-disposition']
+			elif 'Content-Disposition' in r.headers:
+				cont_disp = r.headers['Content-Disposition']
+			else: 
+				cont_disp = ""
+			url_filename = re.findall("filename=(.+)", cont_disp)
+			if url_filename and url_filename[0]:
+				fn = url_filename[0]
+				local_filename = fn.strip('"').strip()
 			with open(local_filename, 'wb') as f:
 				for chunk in r.iter_content(chunk_size=1024):
 					if chunk: # filter out keep-alive new chunks
@@ -126,7 +140,7 @@ def download_file(url,dwnld_dir = None):
 
 			if file_size == 0:
 				logger.error("file size is 0, file must not have downlaoded correctly")
-				raise
+				raise UrlException('Failed to downlaod')
 			return os.path.abspath(local_filename)
 		except PermissionError as e:
 			if dwnld_dir:

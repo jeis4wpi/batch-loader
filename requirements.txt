@@ -1,0 +1,10 @@
+lxml==4.2.1
+pexpect==4.6.0
+ptyprocess==0.6.0
+pudb==2018.1
+Pygments==2.2.0
+pytz==2018.4
+requests==2.18.4
+urllib3==1.22
+urwid==2.0.1
+validators==0.12.1

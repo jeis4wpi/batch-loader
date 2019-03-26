@@ -1,8 +1,6 @@
 import inspect
 import gc
 from datetime import datetime
-from filelock import FileLock
-
 #decorator functions 
 def format_arguments(func):
 	""" formate many args into one string, then calls decorated function with string formatted together
@@ -62,12 +60,12 @@ class FormatLogger():
 	def __new__(cls):
 		if cls._instance is None:
 			cls._instance = object.__new__(cls)
-			FormatLogger._instance.logfile	 	 = None 
-			FormatLogger._instance.failure_file	 = None
-			FormatLogger._instance.time_file	 = None #not part of normal log
-			FormatLogger._instance.total_time_file = None #not part of normal log
-			FormatLogger._instance.proccess_status = None
-			FormatLogger._instance.truncate	 	 = None 
+			FormatLogger._instance.logfile	 	 = "/dev/null" 
+			FormatLogger._instance.failure_file	 = "/dev/null" 
+			FormatLogger._instance.proccess_status = "/dev/null"
+			FormatLogger._instance.time_file	 = "/dev/null" #not part of normal log
+			FormatLogger._instance.total_time_file = "/dev/null" #not part of normal log
+			FormatLogger._instance.truncate	 	 = False 
 			FormatLogger._instance.files		 = []
 			FormatLogger._instance.prints	 	 = 0 
 			FormatLogger._instance.num_success	 = 0 
