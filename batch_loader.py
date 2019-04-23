@@ -249,7 +249,6 @@ class CsvIngestController(IngestController):
         return row['title1'] if 'identifier1' not in row else row['identifier1'] #TODO refactor
     
     def end_ingest_process(self):
-        # from pudb import set_trace;set_trace()
         if self.current < len(self.works) -1 or len(self.failed) + self.num_success < len(self.works):
             current = len(self.failed) + self.num_success
             self.failed.extend(self.works[current:])
