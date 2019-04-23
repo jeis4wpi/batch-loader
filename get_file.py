@@ -129,6 +129,11 @@ def download_file(url,dwnld_dir = None):
 			if url_filename and url_filename[0]:
 				fn = url_filename[0]
 				local_filename = fn.strip('"').strip()
+				if dwnld_dir[-1] == '/':
+					local_filename = dwnld_dir+local_filename # put it in download dir
+				else:
+					local_filename = dwnld_dir+'/'+local_filename # put it in download dir
+
 			with open(local_filename, 'wb') as f:
 				for chunk in r.iter_content(chunk_size=1024):
 					if chunk: # filter out keep-alive new chunks
