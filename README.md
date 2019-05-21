@@ -39,7 +39,7 @@ To run batch-loader:
     use `python batch_loader.py --help` to see all the options
 
 ## Specification of CSV
-1. The first row must contain the field names. (unless --url is given)
+1. The first row must contain the field names.
 2. Fields that take multiple values should be placed in multiple columns.
    Each field name should be appended with an incrementing integer. For
    example, "author1", "author2", "author3". Even if there is only a
