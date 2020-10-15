@@ -81,7 +81,7 @@ def mv(path,new_path,args = None):
 		return
 	return subprocess.run(['sudo','mv',path,new_path]+args, stdout=subprocess.PIPE)
 
-def download_file(url,dwnld_dir = None):
+def download_file(url, dwnld_dir=None, auth_enable=False, auth_user=None, auth_pass=None):
 	""" if the given url is valid and we have access to the file attached to it. this funciton
 	will download said file to the directory given or just put it in the current dir.
 	args:
@@ -107,7 +107,10 @@ def download_file(url,dwnld_dir = None):
 				logger.error('Invalid url: {}'.format(url))
 				raise UrlException('Invalid url: {}'.format(url))
 
-			r = requests.get(url, stream =True)
+			if auth_enable:
+				r = requests.get(url, stream=True, auth=(auth_user, auth_pass))
+			else:
+				r = requests.get(url, stream=True)
 			break
 		except requests.exceptions.ConnectionError as e:
 			logger.error('Can not connect...\n',e,'\n',url)
@@ -123,7 +126,7 @@ def download_file(url,dwnld_dir = None):
 				cont_disp = r.headers['content-disposition']
 			elif 'Content-Disposition' in r.headers:
 				cont_disp = r.headers['Content-Disposition']
-			else: 
+			else:
 				cont_disp = ""
 			url_filename = re.findall("filename=(.+)", cont_disp)
 			if url_filename and url_filename[0]:
