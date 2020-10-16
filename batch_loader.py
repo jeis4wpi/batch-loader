@@ -31,6 +31,9 @@ class IngestController():
         self.ingest_command = None #set in init() & set_flags()
         self.ingest_path = None #set in init() & set_flags()
         self.ingest_depositor = None #set in init() & set_flags()
+        self.auth_enable = None #set in init()
+        self.auth_user = None #set in init()
+        self.auth_pass = None #set in init()
         self.worktype = None #set in init() & set_flags()
         self.url = None #set in init() & set_flags()
         self.debug = None #set in init() & set_flags()
@@ -42,24 +45,27 @@ class IngestController():
         self.num_success = 0
     def __iter__(self):
         """
-        Desc: set up all needed variable for the iteration through all of the works. 
+        Desc: set up all needed variable for the iteration through all of the works.
         Returns: self (Subclass of IngestController), an iterator object.
         """
         raise NotImplementedError
-    
+
     def __next__(self):
         """
         Returns: the next work
         Raises StopIteration after final work
         """
         raise NotImplementedError
-    
-    def init(self,file_path,ingest_command,ingest_path,ingest_depositor,worktype):
+
+    def init(self,file_path,ingest_command,ingest_path,ingest_depositor,auth_enable,auth_user,auth_pass,worktype):
         """ sets up instance variables """
         self.file_path = file_path # where the file to be ingested is
         self.ingest_command = ingest_command # what command to use to ingest (call rake task)
         self.ingest_path = ingest_path #where is the hyax instance
         self.ingest_depositor = ingest_depositor # the depositor email
+        self.auth_enable = auth_enable # enables or disables the use of authentication for downloading files
+        self.auth_user = auth_user # HTTP auth username
+        self.auth_pass = auth_pass # HTTP auth password
         self.worktype = worktype # hyrax work type
 
     def set_flags(self,url = None,debug = None,collection = None, tiff = None):
@@ -70,7 +76,7 @@ class IngestController():
               debug: (Boolean) debug mode
               collection (str) Optional - the id of the collection to add this work to in hyrax
         """
-        self.url = url 
+        self.url = url
         self.debug = debug
         self.collection = collection
         self.tiff = tiff
@@ -78,10 +84,10 @@ class IngestController():
     def run_ingest_process(self):
         """
         Desc: loops though the works given from the iterator returned by self.__iter__()
-            called ingest_item for every work in self, logging when works succeed/fail 
+            called ingest_item for every work in self, logging when works succeed/fail
             calls self.end_ingest_process after iteration stops.
         """
-        try:    
+        try:
             for row in self:
                 try:
                     upload_id = self.get_identifier(row)
@@ -101,7 +107,7 @@ class IngestController():
             self.end_ingest_process()
             return
         self.end_ingest_process()
-    
+
     def write_metadata_and_ingest(self,metadata,row,raw_download_dir,base_filepath):
         """ takes the metadata for a work,  ingests the work into hyrax using rake task in config.py
         """
@@ -138,23 +144,23 @@ class IngestController():
             if (not debug) and os.path.exists(metadata_filepath):
                 shutil.rmtree(metadata_temp_path, ignore_errors=True)
                 #shutil.rmtree(raw_download_dir, ignore_errors=True)
-    
+
     def get_identifier(self,row):
         raise NotImplementedError
-    
+
     def ingest_item(self,row,upload_id):
         """
-        Desc: this method takes in a row and the identifier for the work and 
+        Desc: this method takes in a row and the identifier for the work and
             prepares metadata and files then ingests said work into hyrax.
         Args:   row: the object representing the work to be ingested
                 upload_id: (str) the name for the work for logging purposes
         Returns void - nothing is returned, the work is ingested
         """
         raise NotImplementedError
-    
+
     def end_ingest_process(self):
         """
-        Desc: does anything needed to be done after the process is complete 
+        Desc: does anything needed to be done after the process is complete
         """
         logger.close()
 
@@ -168,11 +174,11 @@ class CsvIngestController(IngestController):
         self.base_filepath = None # where the csv is stored, used for non url ingests
         self.raw_download_dir = None # temperary dircectory to download work related files
         self.field_names = None # original field names given in the csv
-    
+
     def __iter__(self):
         """
         Desc: set up all needed variable for the iteration through all of the works
-            in a CSV. 
+            in a CSV.
         Returns: self (CsvIngestController), an iterator object.
 
         """
@@ -196,7 +202,7 @@ class CsvIngestController(IngestController):
 
     def __next__(self):
         """
-        get the next work in the CSV 
+        get the next work in the CSV
         """
         try:
             current_work = self.works[self.current]
@@ -207,7 +213,7 @@ class CsvIngestController(IngestController):
 
     def ingest_item(self,row,upload_id):
         """
-        Desc: this method takes in a row and the identifier for the work and 
+        Desc: this method takes in a row and the identifier for the work and
             prepares metadata and files then ingests said work into hyrax.
         Args:   row:
                 upload_id: (str) the name for the work for logging purposes
@@ -220,7 +226,7 @@ class CsvIngestController(IngestController):
             files_dir = row['files']
         if self.url: #boolean representing if we are using urls to get relevant file(s)
             logger.status("downloading %s"%(row['fulltext_url']))
-            files_dir, full_file_path = rip_files_from_url(row,self.raw_download_dir)
+            files_dir, full_file_path = rip_files_from_url(row, self.raw_download_dir, self.auth_enable, self.auth_user, self.auth_pass)
             #full_file_path  = get_file.download_file(row['fulltext_url'],dwnld_dir = raw_download_dir)
             row['files'] = files_dir
             row['first_file'] = full_file_path
@@ -247,7 +253,7 @@ class CsvIngestController(IngestController):
     def get_identifier(self,row):
         #with csv this must contain 1 because title and identifier are not scalar
         return row['title1'] if 'identifier1' not in row else row['identifier1'] #TODO refactor
-    
+
     def end_ingest_process(self):
         if self.current < len(self.works) -1 or len(self.failed) + self.num_success < len(self.works):
             current = len(self.failed) + self.num_success
@@ -304,7 +310,7 @@ class JsonIngestController(IngestController):
 
     def ingest_item(self,row,upload_id):
         """
-        Desc: this method takes in a row and the identifier for the work and 
+        Desc: this method takes in a row and the identifier for the work and
             prepares metadata and files then ingests said work into hyrax.
         Args:   row:
                 upload_id: (str) the name for the work for logging purposes
@@ -316,7 +322,7 @@ class JsonIngestController(IngestController):
             files_dir=row['files']
             full_file_path=row['first_file']
         if self.url:
-            files_dir, full_file_path = rip_files_from_url(row,self.raw_download_dir)
+            files_dir, full_file_path = rip_files_from_url(row, self.raw_download_dir, self.auth_enable, self.auth_user, self.auth_pass)
         if self.tiff:
             if not os.path.isdir(files_dir):
                 files_dir,full_file_path = make_tiff_from_file(full_file_path,new_dir=True)
@@ -329,7 +335,7 @@ class JsonIngestController(IngestController):
         metadata = {}
         for key in row:
             if key != 'files' and key != 'first_file' and key != 'resources' and key != 'fulltext_url':
-                metadata[key] = row[key] 
+                metadata[key] = row[key]
         ##############################
         self.write_metadata_and_ingest(metadata,row,self.raw_download_dir,self.base_filepath)
         logger.success("Ingested",upload_id)
@@ -337,7 +343,7 @@ class JsonIngestController(IngestController):
     def get_identifier(self,row):
         #what to call this for logging
         return row['title'] if 'identifier' not in row else row['identifier']
-    
+
     def end_ingest_process(self):
         # we ended the process early for some reason
         if self.current < len(self.works) -1 or len(self.failed) + self.num_success < len(self.works):
@@ -350,7 +356,7 @@ class JsonIngestController(IngestController):
         if self.failed:
             retry_file = "ingest.retry"
             with open(retry_file,'w') as jsonfile:
-                # json_dump = [] # prepared records 
+                # json_dump = [] # prepared records
                 jsonfile.write(json.dumps(self.failed, indent=4))
             commandline_args = sys.argv[2:]
             path = self.base_filepath+"/"+retry_file
@@ -374,15 +380,15 @@ class IngestFactory():
             ingest_controller = JsonIngestController()
         else:#csv, defualt
             ingest_controller = CsvIngestController()
-    
-        ingest_controller.init(args.file,config.ingest_command,config.ingest_path,config.ingest_depositor,args.worktype)
+
+        ingest_controller.init(args.file,config.ingest_command,config.ingest_path,config.ingest_depositor,config.auth_enable,config.auth_user,config.auth_pass,args.worktype)
         ingest_controller.set_flags(url = args.url,debug = args.debug,collection = args.collection,tiff = args.tiff)
         return ingest_controller
 
 
 def validate_metadata_json(metadata,use_url):
-    """ 
-    Desc: ensures that the metadata is in the right form by getting list of required scalars and list of required 
+    """
+    Desc: ensures that the metadata is in the right form by getting list of required scalars and list of required
     multi-valued metadata objects and ensure that scalars are not lists and that multivalues are.
     Args: metadata (dict): all metadat including the files, first_file, fulltext_url type stuff
     Returns: its a void function
@@ -406,10 +412,10 @@ def validate_metadata_json(metadata,use_url):
     return
 
 
-def rip_files_from_url(row,raw_download_dir):
-    """ 
+def rip_files_from_url(row, raw_download_dir, auth_enable=False, auth_user=None, auth_pass=None):
+    """
     Desc: takes in a row of metadata including 'fulltext_url' and optionally 'resources'
-        downloads all files to new directory insdie the raw_download_dir directory returns 
+        downloads all files to new directory insdie the raw_download_dir directory returns
         path to the dir containing the files, and the first files path
     Args: row (dict): metadata for the work
           raw_download_dir (str): path to the place these files should be stored
@@ -434,13 +440,13 @@ def rip_files_from_url(row,raw_download_dir):
 
     if 'resources' in row and row['resources']:
         for resource in row['resources']:
-            get_file.download_file(resource,dwnld_dir = proj_dir)
-    full_file_path  = get_file.download_file(row['fulltext_url'],dwnld_dir = proj_dir)
+            get_file.download_file(resource,dwnld_dir = proj_dir, auth_enable, auth_user, auth_pass)
+    full_file_path  = get_file.download_file(row['fulltext_url'],dwnld_dir = proj_dir, auth_enable, auth_user, auth_pass)
     return proj_dir, full_file_path
 
 def make_tiff_from_file(full_file_path,files = None,new_dir = False):
     """ generates a tiff for the file at full_file_path, places it in the same directory.
-        if new_dir flag evaluates as true, then will create a new directory and place both files there 
+        if new_dir flag evaluates as true, then will create a new directory and place both files there
     """
     if files is None:
         files = []
@@ -602,7 +608,7 @@ def find_files(row_filepath, row_first_filepath, base_filepath):
     # Make sure at least one file
     if not files:
         raise FileNotFoundError('Files in {}'.format(filepath))
-    
+
     # Either a row_first_filepath or only one file
     if not (row_first_filepath or len(files) == 1):
         raise FileNotFoundError('First file')
