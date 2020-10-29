@@ -440,8 +440,8 @@ def rip_files_from_url(row, raw_download_dir, auth_enable=False, auth_user=None,
 
     if 'resources' in row and row['resources']:
         for resource in row['resources']:
-            get_file.download_file(resource,dwnld_dir = proj_dir, auth_enable, auth_user, auth_pass)
-    full_file_path  = get_file.download_file(row['fulltext_url'],dwnld_dir = proj_dir, auth_enable, auth_user, auth_pass)
+            get_file.download_file(resource,dwnld_dir = proj_dir, auth_enable=auth_enable, auth_user=auth_user, auth_pass=auth_pass)
+    full_file_path  = get_file.download_file(row['fulltext_url'],dwnld_dir = proj_dir, auth_enable=auth_enable, auth_user=auth_user, auth_pass=auth_pass)
     return proj_dir, full_file_path
 
 def make_tiff_from_file(full_file_path,files = None,new_dir = False):

@@ -1,6 +1,7 @@
 import re
 import os
 import time
+import json
 import subprocess
 import getpass
 from urllib.parse import unquote
@@ -108,10 +109,30 @@ def download_file(url, dwnld_dir=None, auth_enable=False, auth_user=None, auth_p
 				raise UrlException('Invalid url: {}'.format(url))
 
 			if auth_enable:
-				r = requests.get(url, stream=True, auth=(auth_user, auth_pass))
+
+				# 1. login
+			  login = {}
+			  login['name'] = auth_user
+			  login['pass'] = auth_pass
+			  l = json.dumps(login)
+			  req = requests.post("https://eprojects.wpi.edu/user/login?_format=json", data=l)
+
+			  # 2. download
+			  auth = {}
+			  auth['head'] = {}
+			  auth['cookie'] = {}
+			  if req.status_code == 200:
+			    r_json = json.loads(req.text)
+			    auth['head']['X-CSRF-Token'] = r_json['csrf_token']
+			    auth['head']['Content-Type'] = 'application/json'
+			    auth['cookie'] = req.cookies.get_dict()
+			    r = requests.get(url, stream=True, headers=auth['head'], cookies=auth['cookie'])
+
 			else:
 				r = requests.get(url, stream=True)
+
 			break
+
 		except requests.exceptions.ConnectionError as e:
 			logger.error('Can not connect...\n',e,'\n',url)
 			if attempts >=3:
