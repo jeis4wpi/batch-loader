@@ -26,11 +26,11 @@ def create_tiff_imagemagick(file):
 	tiff = os.path.splitext(file)[0] + '.tiff'
 	return_code = subprocess.run(['convert',file,tiff], stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
 	# if return_code != 0:
-	# 	raise Exception("non zero return code for image magick convert, if you are on windows this doesnt work.\ncommand:convert {} {}".format(file,tiff))
+	# 	raise Exception("non zero return code for image magick convert, if you are on windows this does not work.\ncommand:convert {} {}".format(file,tiff))
 	if os.path.exists(tiff):
 		return tiff
 	logger.error('Could not create TIFF')
-	raise Exception("image magick convert failed to produce tiff, if you are on windows this doesnt work use magick convert instead.\n\t command: convert {} {}".format(file,tiff))
+	raise Exception("image magick convert failed to produce tiff, if you are on windows this does not work use magick convert instead.\n\t command: convert {} {}".format(file,tiff))
 
 def create_dir_for(files):
 	"""
@@ -43,7 +43,7 @@ def create_dir_for(files):
 	tmpdir = tempfile.mkdtemp(dir=parentdir)
 	for path in files:
 		file_name = os.path.basename(path)
-		os.rename(path,os.path.join(tmpdir,file_name)) # move the file into the temporay dir basically mv(source=path,dest=tmpdir)
+		os.rename(path,os.path.join(tmpdir,file_name)) # move the file into the temporary dir basically mv(source=path,dest=tmpdir)
 	return tmpdir
 
 def get_file_name_from_url(url):
@@ -83,7 +83,7 @@ def mv(path,new_path,args = None):
 	return subprocess.run(['sudo','mv',path,new_path]+args, stdout=subprocess.PIPE)
 
 def download_file(url, dwnld_dir=None, auth_enable=False, auth_user=None, auth_pass=None):
-	""" if the given url is valid and we have access to the file attached to it. this funciton
+	""" if the given url is valid and we have access to the file attached to it. this function
 	will download said file to the directory given or just put it in the current dir.
 	args:
 		url: the url
@@ -168,7 +168,7 @@ def download_file(url, dwnld_dir=None, auth_enable=False, auth_user=None, auth_p
 				print('done downloading %s' % (local_filename),"file size:",file_size)
 
 			if file_size == 0:
-				logger.error("file size is 0, file must not have downlaoded correctly")
+				logger.error("file size is 0, file must not have downloaded correctly")
 				raise UrlException('Failed to downlaod')
 			return os.path.abspath(local_filename)
 		except PermissionError as e:
@@ -178,7 +178,7 @@ def download_file(url, dwnld_dir=None, auth_enable=False, auth_user=None, auth_p
 				if grant_access(dwnld_dir).returncode == 0:
 					print('success')
 					return download_file(url,dwnld_dir)
-			logger.error("could not aquire permission to download to target dir")
+			logger.error("could not acquire permission to download to target dir")
 			raise
 
 	text = ''

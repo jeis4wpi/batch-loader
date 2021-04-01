@@ -15,7 +15,7 @@ Requires Python >= 3.5
         virtualenv -p python3 ENV
         source ENV/bin/activate
 
-3. install needed python libraries 
+3. install needed python libraries
 
         pip install -r requirements.txt
 
@@ -29,10 +29,10 @@ Requires Python >= 3.5
 To run batch-loader:
 
     `python batch_loader.py <path to csv>`
-    OR if instead of haveing the column `files` you have the column `fulltext_url` of the related resource
+    OR if instead of having the column `files` you have the column `fulltext_url` of the related resource
     `python batch_loader.py <path to csv> --url`
     see example.csv and url_example.csv
-    finally it can also be run on json files, using the same elements as the csv. 
+    finally it can also be run on json files, using the same elements as the csv.
     `python batch_loader.py <path to json file> --json`
     there are more options as well such as what collections to ingest to if your
     rake task can handle that, whether or not to generate tiffs, and print level.

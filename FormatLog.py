@@ -1,9 +1,9 @@
 import inspect
 import gc
 from datetime import datetime
-#decorator functions 
+#decorator functions
 def format_arguments(func):
-	""" formate many args into one string, then calls decorated function with string formatted together
+	""" format many args into one string, then calls decorated function with string formatted together
 	I.E. func("I love ",johnny.fullname,"because he is",100,"years old",**kwargs)
 		might look like func("I love Jonnathan because he is 100 years old",**kwargs)
 	"""
@@ -28,7 +28,7 @@ def format_arguments(func):
 
 def get_context_wrapper(function_to_call):
 	"""
-	passes in the context in which the wrapped function was called 
+	passes in the context in which the wrapped function was called
 	"""
 	from functools import wraps
 	@wraps(function_to_call)
@@ -47,27 +47,27 @@ def get_context_wrapper(function_to_call):
 						funcs.append(func)
 						if len(funcs) > 1:
 							break
-		
+
 		args.append(str(funcs[0])[10:-16] if funcs and len(funcs) == 1 else "")
 		return function_to_call(self,*args,**kwargs)
 	return context_call
 
 class FormatLogger():
 	"""
-	singleton, in order to make everything log to the same files in the right order with out passing in the log class 
+	singleton, in order to make everything log to the same files in the right order with out passing in the log class
 	"""
 	_instance=None
 	def __new__(cls):
 		if cls._instance is None:
 			cls._instance = object.__new__(cls)
-			FormatLogger._instance.logfile	 	 = "/dev/null" 
-			FormatLogger._instance.failure_file	 = "/dev/null" 
+			FormatLogger._instance.logfile	 	 = "/dev/null"
+			FormatLogger._instance.failure_file	 = "/dev/null"
 			FormatLogger._instance.proccess_status = "/dev/null"
-			FormatLogger._instance.truncate	 	 = False 
-			FormatLogger._instance.files		 = [] 
-			FormatLogger._instance.prints	 	 = 0 
-			FormatLogger._instance.num_success	 = 0 
-			FormatLogger._instance.num_fail		 = 0 
+			FormatLogger._instance.truncate	 	 = False
+			FormatLogger._instance.files		 = []
+			FormatLogger._instance.prints	 	 = 0
+			FormatLogger._instance.num_success	 = 0
+			FormatLogger._instance.num_fail		 = 0
 		return cls._instance
 	def __init__(self):
 		self.truncate = self._instance.truncate
@@ -117,7 +117,7 @@ class FormatLogger():
 			if n == level:
 				break
 			write_line_to_file(file,desc)
-	 
+
 	@format_arguments
 	@get_context_wrapper
 	def status(self,desc,cont):
@@ -143,18 +143,18 @@ class FormatLogger():
 			print(string)
 		for file in [self.logfile,self.proccess_status]:
 			write_line_to_file(file,string)
-	
+
 	@format_arguments
 	def error(self,desc):
 		if self.prints <=2:
 			print(desc)
 		for file in [self.proccess_status]:
 			write_line_to_file(file,desc)
-	
+
 	@format_arguments
 	@get_context_wrapper
 	def critical(self,desc,cont):# pylint: disable=E1120
-		string = "\n-- CRITIICAL FAILURE in {} --:{}\n".format(cont if cont else "Main Scope?",desc)
+		string = "\n-- CRITICAL FAILURE in {} --:{}\n".format(cont if cont else "Main Scope?",desc)
 		print(string)
 		for file in self.files:
 			write_line_to_file(file,string)
@@ -165,7 +165,7 @@ class FormatLogger():
 			print("SUCCESS: " + desc)
 		for file in [self.logfile,self.proccess_status]:
 			write_line_to_file(file,"SUCCESS: " + desc)
-	
+
 	@format_arguments
 	def failure(self,desc):
 		self.num_fail += 1
@@ -175,7 +175,7 @@ class FormatLogger():
 			write_line_to_file(file,"FAILURE: " + desc)
 
 	def close(self):
-		suc = "Succeded on {} out of {} total".format(self.num_success,self.num_fail+self.num_success)
+		suc = "Succeeded on {} out of {} total".format(self.num_success,self.num_fail+self.num_success)
 		if self.prints <=3:
 			print(suc)
 		write_line_to_file(self.failure_file,"Failed {} out of {} total".format(self.num_fail,self.num_fail+self.num_success))
@@ -211,6 +211,3 @@ def get_context():
 		return "- Main Scope"
 	elif len(stack) > 3:
 		return stack[3].code_context[0]
-
-
-

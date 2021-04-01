@@ -99,7 +99,7 @@ class IngestController():
                     logger.failure("%s was not ingested" % (upload_id) )
                     self.failed.append(row)
                     if logger.num_success == 0 and logger.num_fail >= 5:
-                        print("Warning: Ingest Failed frist 5 in a row!")
+                        print("Warning: Ingest Failed first 5 in a row!")
 
                 logger.status('End of',upload_id,'\n')
         except KeyboardInterrupt as yikes_stop_error:
@@ -172,7 +172,7 @@ class CsvIngestController(IngestController):
         self.repeating_field_names = None # fields that will be a list
         self.current = 0 # the index of the current work we going to ingest
         self.base_filepath = None # where the csv is stored, used for non url ingests
-        self.raw_download_dir = None # temperary dircectory to download work related files
+        self.raw_download_dir = None # temporary directory to download work related files
         self.field_names = None # original field names given in the csv
 
     def __iter__(self):
@@ -378,7 +378,7 @@ class IngestFactory():
     def create_controller(cls,args,config):
         if args.json:#Json
             ingest_controller = JsonIngestController()
-        else:#csv, defualt
+        else:#csv, default
             ingest_controller = CsvIngestController()
 
         ingest_controller.init(args.file,config.ingest_command,config.ingest_path,config.ingest_depositor,config.auth_enable,config.auth_user,config.auth_pass,args.worktype)
